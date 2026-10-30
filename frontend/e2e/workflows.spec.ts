@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 async function login(page: any) {
-  await page.goto("/");
+  await page.goto("/login");
   await page.getByLabel("사용자명").fill("admin");
   await page.getByLabel("비밀번호").fill("test-password-long");
   await page.getByRole("button", { name: "로그인", exact: true }).click();
