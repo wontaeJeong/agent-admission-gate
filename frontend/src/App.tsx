@@ -60,7 +60,9 @@ const Guide = lazy(() =>
 const Admin = lazy(() =>
   import("./pages/Admin").then((m) => ({ default: m.Admin })),
 );
-const Coverage = lazy(() => import("./pages/Coverage").then(m => ({ default: m.Coverage })));
+const Coverage = lazy(() =>
+  import("./pages/Coverage").then((m) => ({ default: m.Coverage })),
+);
 const Boards = lazy(() =>
   import("./pages/Boards").then((m) => ({ default: m.Boards })),
 );
@@ -116,9 +118,12 @@ export default function App() {
         <></>
       </State>
     );
-  if (!user) return location.pathname === "/" || location.pathname === "/about"
-    ? <Landing mode={config?.mode ?? "oidc"} />
-    : <Login mode={config?.mode} onLogin={refresh} />;
+  if (!user)
+    return location.pathname === "/" || location.pathname === "/about" ? (
+      <Landing mode={config?.mode ?? "oidc"} />
+    ) : (
+      <Login mode={config?.mode} onLogin={refresh} />
+    );
   return (
     <AppContext.Provider value={{ user, boards: config.boards_enabled, lang }}>
       <a href="#main-content" className="skip-link">
@@ -133,7 +138,7 @@ export default function App() {
             <Plus size={17} />
             {t("새 검사 실행", "New scan")}
           </Link>
-          <nav aria-label={t('주 탐색','Main navigation')}>
+          <nav aria-label={t("주 탐색", "Main navigation")}>
             <div className="nav-group-label">{t("검사", "INSPECT")}</div>
             <NavLink to="/" end>
               <LayoutDashboard size={17} />
@@ -172,7 +177,10 @@ export default function App() {
               </>
             )}
             <div className="nav-group-label">{t("서비스", "SERVICE")}</div>
-            <NavLink to="/about"><Info size={17}/>{t("서비스 소개","About")}</NavLink>
+            <NavLink to="/about">
+              <Info size={17} />
+              {t("서비스 소개", "About")}
+            </NavLink>
             {user.role === "admin" && (
               <>
                 <div className="nav-group-label">{t("관리", "MANAGE")}</div>
@@ -180,7 +188,10 @@ export default function App() {
                   <Settings size={17} />
                   {t("관리자", "Administration")}
                 </NavLink>
-                <NavLink to="/coverage"><ClipboardList size={17}/>{t("요구사항 · 검증","Coverage · evidence")}</NavLink>
+                <NavLink to="/coverage">
+                  <ClipboardList size={17} />
+                  {t("요구사항 · 검증", "Coverage · evidence")}
+                </NavLink>
               </>
             )}
           </nav>
@@ -268,9 +279,32 @@ export default function App() {
                 <Route path="/api-keys" element={<Keys />} />
                 <Route path="/device-clients" element={<Devices />} />
                 <Route path="/guide" element={<Guide />} />
-                <Route path="/admin" element={user.role === "admin" ? <Admin /> : <div role="alert">403</div>} />
-                <Route path="/coverage" element={user.role === "admin" ? <Coverage /> : <div role="alert">403</div>} />
-                <Route path="/about" element={<Landing mode={config?.mode ?? "oidc"} authenticated />} />
+                <Route
+                  path="/admin"
+                  element={
+                    user.role === "admin" ? (
+                      <Admin />
+                    ) : (
+                      <div role="alert">403</div>
+                    )
+                  }
+                />
+                <Route
+                  path="/coverage"
+                  element={
+                    user.role === "admin" ? (
+                      <Coverage />
+                    ) : (
+                      <div role="alert">403</div>
+                    )
+                  }
+                />
+                <Route
+                  path="/about"
+                  element={
+                    <Landing mode={config?.mode ?? "oidc"} authenticated />
+                  }
+                />
                 {config.boards_enabled && (
                   <>
                     <Route path="/boards" element={<Boards />} />

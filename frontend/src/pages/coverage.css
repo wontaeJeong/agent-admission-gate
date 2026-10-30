@@ -1,6 +1,77 @@
-.coverage-summary{display:flex;gap:16px;align-items:center;border:1px solid var(--color-line);background:var(--color-raised);padding:19px 24px;border-radius:12px;margin-bottom:22px}
-.coverage-summary strong{font-size:2.4rem;color:var(--color-accent-strong)}.coverage-summary p{color:var(--color-ink-muted);margin:2px 0}
-.coverage-filter{display:flex;gap:14px;flex-wrap:wrap;margin:16px 0}.coverage-filter label{display:flex;align-items:center;gap:10px}
-.coverage-filter input{min-width:220px}.coverage-scroll{max-width:100%;overflow-x:auto}.coverage-table{min-width:740px;width:100%;border-collapse:collapse}
-.coverage-table th,.coverage-table td{padding:14px;text-align:left;vertical-align:top;border-bottom:1px solid var(--color-line);line-height:1.6}.coverage-table th{font-weight:500}.coverage-table thead th,.coverage-table small{color:var(--color-ink-muted);font-size:.83rem}.coverage-table tbody th strong{font-weight:650;display:block}.coverage-table tbody th small{display:block}.coverage-table a{color:var(--color-accent-strong)}
-@media(max-width:720px){.coverage-filter label{width:100%;flex-direction:column;align-items:stretch}.coverage-filter input{min-width:0}}
+.coverage-summary {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  border: 1px solid var(--color-line);
+  background: var(--color-raised);
+  padding: 19px 24px;
+  border-radius: 12px;
+  margin-bottom: 22px;
+}
+.coverage-summary strong {
+  font-size: 2.4rem;
+  color: var(--color-accent-strong);
+}
+.coverage-summary p {
+  color: var(--color-ink-muted);
+  margin: 2px 0;
+}
+.coverage-filter {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.coverage-filter label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.coverage-filter input {
+  min-width: 220px;
+}
+.coverage-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.coverage-table {
+  min-width: 740px;
+  width: 100%;
+  border-collapse: collapse;
+}
+.coverage-table th,
+.coverage-table td {
+  padding: 14px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-line);
+  line-height: 1.6;
+}
+.coverage-table th {
+  font-weight: 500;
+}
+.coverage-table thead th,
+.coverage-table small {
+  color: var(--color-ink-muted);
+  font-size: 0.83rem;
+}
+.coverage-table tbody th strong {
+  font-weight: 650;
+  display: block;
+}
+.coverage-table tbody th small {
+  display: block;
+}
+.coverage-table a {
+  color: var(--color-accent-strong);
+}
+@media (max-width: 720px) {
+  .coverage-filter label {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .coverage-filter input {
+    min-width: 0;
+  }
+}
