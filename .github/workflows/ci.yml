@@ -53,8 +53,29 @@ jobs:
         working-directory: docs
   container:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [runtime, scanners]
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
-        with: {context: ., target: runtime, push: false, tags: aag:ci, cache-from: 'type=gha', cache-to: 'type=gha,mode=max'}
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: false
+          load: true
+          tags: aag:${{ matrix.target }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+      - name: Non-root container startup and HTTP smoke
+        run: |
+          docker run --rm aag:${{ matrix.target }} aag --help
+          cid=$(docker run -d -e AAG_BOOTSTRAP_PASSWORD=ci-only-password-long aag:${{ matrix.target }})
+          trap 'docker logs "$cid"; docker rm -f "$cid"' EXIT
+          for attempt in $(seq 1 60); do
+            if docker exec "$cid" python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=2)"; then break; fi
+            sleep 1
+          done
+          docker exec "$cid" python -c "import os,urllib.request; assert os.getuid() == 10001; assert b'Agent Admission Gate' in urllib.request.urlopen('http://127.0.0.1:8000/').read()"
