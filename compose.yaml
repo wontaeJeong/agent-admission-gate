@@ -1,0 +1,38 @@
+services:
+  gate:
+    build:
+      context: .
+      target: runtime
+    ports: ["127.0.0.1:8000:8000"]
+    environment:
+      AAG_ENVIRONMENT: development
+      AAG_PUBLIC_URL: http://localhost:8000
+      AAG_DATABASE_URL: postgresql+psycopg://aag:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db/aag
+      AAG_BOOTSTRAP_PASSWORD: ${AAG_BOOTSTRAP_PASSWORD:?Set a strong AAG_BOOTSTRAP_PASSWORD}
+      AAG_BOARDS_ENABLED: ${AAG_BOARDS_ENABLED:-false}
+    volumes: ["gate-data:/app/data"]
+    depends_on:
+      db: {condition: service_healthy}
+    restart: unless-stopped
+    init: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: {memory: 2G, cpus: '2'}
+  db:
+    image: postgres:18.1
+    environment:
+      POSTGRES_DB: aag
+      POSTGRES_USER: aag
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes: ["postgres-data:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aag -d aag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+volumes:
+  gate-data:
+  postgres-data:

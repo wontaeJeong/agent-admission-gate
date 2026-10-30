@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent-admission-gate
+spec:
+  selector: {app: agent-admission-gate}
+  ports: [{name: http, port: 80, targetPort: http}]

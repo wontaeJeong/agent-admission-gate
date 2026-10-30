@@ -1,0 +1,20 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: agent-admission-gate
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 21m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '90'
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [admission-stg.example.com]
+      secretName: admission-tls
+  rules:
+    - host: admission-stg.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: {name: agent-admission-gate, port: {name: http}}

@@ -1,0 +1,34 @@
+export const gatePath =
+  "M50 7 L89.3 29.1 Q94 31.9 94 37.4 L94 87.8 Q94 92 89.8 92 H80.4 Q76.3 92 76.3 87.8 V42.5 L50 27.2 L23.7 42.5 V87.8 Q23.7 92 19.6 92 H10.2 Q6 92 6 87.8 V37.4 Q6 31.9 10.7 29.1 Z";
+export const shieldPath =
+  "M50 46 L66.8 54.4 Q69.4 55.7 69.4 59.1 V68.6 C69.4 81.6 61.4 89.3 50 95 C38.6 89.3 30.6 81.6 30.6 68.6 V59.1 Q30.6 55.7 33.2 54.4 Z";
+export const tickPath = "M40.4 69.4 L47.7 76.5 L60.9 62.5";
+export function Brand({ compact = false }: { compact?: boolean }) {
+  return (
+    <span className="brand">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <path d={gatePath} className="brand-gate" />
+        <path d={shieldPath} className="brand-shield" />
+        <path
+          d={tickPath}
+          className="brand-tick"
+          fill="none"
+          strokeWidth="6.1"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      {!compact && (
+        <span>
+          agent admission<span className="brand-sub">gate</span>
+        </span>
+      )}
+    </span>
+  );
+}
+export function syncFavicon() {
+  const css = getComputedStyle(document.documentElement);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="${gatePath}" fill="${css.getPropertyValue("--brand-primary").trim()}"/><path d="${shieldPath}" fill="${css.getPropertyValue("--brand-secondary").trim()}"/><path d="${tickPath}" fill="none" stroke="${css.getPropertyValue("--brand-on").trim()}" stroke-width="6.1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (link) link.href = "data:image/svg+xml," + encodeURIComponent(svg);
+}

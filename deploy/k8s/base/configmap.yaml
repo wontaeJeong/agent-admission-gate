@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aag-config
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+data:
+  AAG_ENVIRONMENT: stg
+  AAG_AUTH_MODE: oidc
+  AAG_COOKIE_SECURE: "true"
+  AAG_PUBLIC_URL: https://admission-stg.example.com
+  AAG_OIDC_ISSUER: https://identity.example.com/realms/workspace
+  AAG_OIDC_CLIENT_ID: agent-admission-gate
+  AAG_ALLOWED_GIT_HOSTS: '["github.com"]'
+  AAG_BOARDS_ENABLED: "false"
+  AAG_RUNNER_CONCURRENCY: "2"
+  AAG_QUEUE_CAPACITY: "50"
+  AAG_LLM_PROVIDER: disabled
+  AAG_SCANNER_REVISION: release-0.1.0

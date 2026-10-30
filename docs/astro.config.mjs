@@ -1,0 +1,3 @@
+import { defineConfig } from 'astro/config'
+import starlight from '@astrojs/starlight'
+export default defineConfig({ site: process.env.DOCS_SITE || 'https://wontaejeong.github.io', base: process.env.DOCS_BASE || '/agent-admission-gate', integrations: [starlight({ title: 'Agent Admission Gate', description: 'Evidence-based admission for agent skills and MCP packages', defaultLocale: 'root', locales: { root: { label: '한국어', lang: 'ko' } }, sidebar: [{ label: '시작하기', items: [{ label: '개요', slug: '' }, { label: '실행 가이드', slug: 'quickstart' }] }, { label: '사용하기', items: [{ autogenerate: { directory: 'guides' } }] }, { label: '설계와 운영', items: [{ autogenerate: { directory: 'operations' } }] }], customCss: ['./src/styles/custom.css'] })] })

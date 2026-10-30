@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="480" viewBox="0 0 1600 480" role="img" aria-label="Agent Admission Gate GitHub README banner dark">
+<title>Agent Admission Gate GitHub README banner dark</title>
+
+<rect width="1600" height="480" fill="#19171f"/>
+<rect x="0" y="0" width="8" height="480" fill="#d4a1eb"/>
+<path d="M 1395 46 L1558 138 V374 M1395 46 L1232 138 V374" fill="none" stroke="#d4a1eb" opacity="0.1" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M 1395 114 L1500 174 V364 M1395 114 L1290 174 V364" fill="none" stroke="#d4a1eb" opacity="0.1" stroke-width="2"/>
+<path d="M1048 68 H1530 M1048 417 H1530" stroke="#413348" stroke-width="1"/>
+<g transform="translate(102,139) scale(2.050000)"><path d="M50 7 L89.3 29.1 Q94 31.9 94 37.4 L94 87.8 Q94 92 89.8 92 H80.4 Q76.3 92 76.3 87.8 V42.5 L50 27.2 L23.7 42.5 V87.8 Q23.7 92 19.6 92 H10.2 Q6 92 6 87.8 V37.4 Q6 31.9 10.7 29.1 Z" fill="#d4a1eb"/><path d="M50 46 L66.8 54.4 Q69.4 55.7 69.4 59.1 V68.6 C69.4 81.6 61.4 89.3 50 95 C38.6 89.3 30.6 81.6 30.6 68.6 V59.1 Q30.6 55.7 33.2 54.4 Z" fill="#eac7f6"/><path d="M40.4 69.4 L47.7 76.5 L60.9 62.5" fill="none" stroke="#24192e" stroke-width="6.1" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="360" y="140" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="750" fill="#d4a1eb" letter-spacing="2.2">AGENT TRUST · SECURITY · ADMISSION</text>
+<text x="360" y="245" font-family="Inter, Arial, sans-serif" font-size="69" font-weight="720" fill="#f5f0f8" letter-spacing="-2.5">agent-admission-gate</text>
+<text x="360" y="298" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="450" fill="#b2a7ba" letter-spacing="-0.6">Scan, review, and approve agent integrations.</text>
+<rect x="360" y="346" width="281" height="42" rx="21" fill="#2f2537"/>
+<text x="382" y="374" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="650" fill="#d4a1eb" letter-spacing="-0.25">Secure by review</text>
+<circle cx="614" cy="367" r="5" fill="#d4a1eb"/>
+<circle cx="1060" cy="402" r="4" fill="#b2a7ba" opacity="0.55"/>
+<text x="1074" y="407" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="550" fill="#b2a7ba" letter-spacing="1.2">SCAN</text>
+<path d="M1160 402 h21" stroke="#413348" stroke-width="2"/>
+<circle cx="1205" cy="402" r="4" fill="#b2a7ba" opacity="0.55"/>
+<text x="1219" y="407" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="550" fill="#b2a7ba" letter-spacing="1.2">REVIEW</text>
+<path d="M1305 402 h21" stroke="#413348" stroke-width="2"/>
+<circle cx="1350" cy="402" r="4" fill="#d4a1eb" opacity="1"/>
+<text x="1364" y="407" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="550" fill="#b2a7ba" letter-spacing="1.2">APPROVE</text>
+</svg>

@@ -1,0 +1,3 @@
+:root{--sl-color-accent-low:#352a43;--sl-color-accent:#956bad;--sl-color-accent-high:#eac7f6}
+:root[data-theme='light']{--sl-color-accent-low:#eee5f4;--sl-color-accent:#78469e;--sl-color-accent-high:#623680}
+pre{background:#0d1018!important;color:#edf0f8!important;border:1px solid #3d4459}

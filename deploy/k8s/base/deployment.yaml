@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-admission-gate
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: agent-admission-gate}
+  template:
+    metadata:
+      labels: {app: agent-admission-gate}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: gate
+          image: ghcr.io/wontaejeong/agent-admission-gate:0.1.0
+          ports: [{containerPort: 8000, name: http}]
+          envFrom:
+            - configMapRef: {name: aag-config}
+            - secretRef: {name: aag-secrets}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 250m, memory: 512Mi, ephemeral-storage: 512Mi}
+            limits: {cpu: '2', memory: 2Gi, ephemeral-storage: 2Gi}
+          readinessProbe:
+            httpGet: {path: /health/ready, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health/live, port: http}
+            periodSeconds: 20
+          startupProbe:
+            httpGet: {path: /health/ready, port: http}
+            failureThreshold: 30
+            periodSeconds: 5
+          volumeMounts:
+            - {name: temp, mountPath: /tmp}
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - name: temp
+          emptyDir: {sizeLimit: 1Gi}
+        - name: data
+          emptyDir: {sizeLimit: 512Mi}

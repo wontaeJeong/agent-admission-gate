@@ -1,0 +1,15 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aag-ingress
+spec:
+  podSelector:
+    matchLabels: {app: agent-admission-gate}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}
+      ports: [{protocol: TCP, port: 8000}]
+# Egress policy is environment-specific: permit only approved Git/OIDC/proxy,
+# model and database destinations plus DNS. See docs/deployment.md.
