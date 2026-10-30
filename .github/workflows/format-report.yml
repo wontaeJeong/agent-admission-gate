@@ -1,0 +1,27 @@
+name: Temporary Prettier result for review
+on:
+  push:
+    branches: [feat/knowledge-hub-ui-parity-20261031]
+permissions:
+  contents: read
+jobs:
+  format-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Format proposed UI files in disposable runner
+        working-directory: frontend
+        run: |
+          npm ci
+          npx prettier --write src/App.tsx src/pages/Landing.tsx src/pages/Landing.test.tsx src/pages/Coverage.tsx src/pages/landing.css src/pages/coverage.css
+      - name: Emit formatted public source for patching PR
+        working-directory: frontend
+        run: |
+          for path in src/App.tsx src/pages/Landing.tsx src/pages/Landing.test.tsx src/pages/Coverage.tsx src/pages/landing.css src/pages/coverage.css; do
+            printf 'FORMAT_RESULT|%s|' "$path"
+            base64 -w0 "$path"
+            printf '|END_FORMAT\n'
+          done
