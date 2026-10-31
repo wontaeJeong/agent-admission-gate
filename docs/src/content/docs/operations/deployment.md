@@ -42,6 +42,8 @@ Grype는 데이터베이스가 없거나 만료/오류로 검사에 실패하면
 
 REST/MCP 호출 수, LLM provider/model/latency/status, input/output/cache token을 기록합니다. 7/14/30/90일 UTC 집계와 CSV를 제공합니다. 모델 호출은 자동 재시도하지 않으므로 하나의 실제 호출을 하나의 usage record로 기록합니다. 응답에 토큰이 없으면 null이며 결측 요청 수를 함께 보여줍니다. 비용 단가/청구서가 없으면 0으로 계산하지 않습니다.
 
+관리자는 대화형 로그인 세션으로 `GET /api/admin/audit/export?days=30`에서 감사 기록 CSV를 내려받을 수 있습니다. `days`는 1~90일이며 `action`으로 정확히 일치하는 이벤트를 선택할 수 있습니다. 한 번에 10만 건을 초과하면 더 짧은 기간을 선택해야 합니다. API 키로는 접근할 수 없으며, 내려받은 파일은 조직의 감사 기록 접근·보관 정책에 따라 보호해야 합니다.
+
 서비스의 정상 상태는 외부 엔진 전부가 준비되었다는 뜻이 아닙니다. 운영 상태 화면과 full smoke test를 별도로 확인하세요. 감사·사용량 테이블의 장기 보관/삭제 정책과 백업 접근 권한은 조직 기준에 맞게 정하세요.
 
 ## 확장 계획
@@ -51,7 +53,7 @@ REST/MCP 호출 수, LLM provider/model/latency/status, input/output/cache token
 - 프로세스 큐 → durable broker + lease/idempotency/worker heartbeat; DB 상태 전이의 원자적 claim. 업로드는 암호화 객체 저장소와 보관 정책으로 이동합니다.
 - 일시 clone credentials는 DB 평문 저장 대신 짧은 수명의 외부 credential broker로 이동합니다.
 - API와 격리 scan worker 분리, CPU/memory quota, engine별 풀·timeout·rate limit. 이후에 API replica를 늘립니다.
-- PostgreSQL HA, 복구 리허설, 인덱스/파티셔닝/통계 rollup, 감사 보관·내보내기. 현재 관리자 목록은 사용자 1000, 키/예외 500/1000 표시 상한이 있습니다.
+- PostgreSQL HA, 복구 리허설, 인덱스/파티셔닝/통계 rollup, 감사 장기 보관. 현재 관리자 목록은 사용자 1000, 키/예외 500/1000 표시 상한이 있습니다.
 - 조직/프로젝트 tenancy, 명시적 공유 모델과 접근 정책은 별도 설계합니다. 이번 모델은 개인 소유 + 검토/관리자 운영 범위입니다.
 
 운영 릴리스 전에는 실제 engine 바이너리, 최신 취약점 DB, IdP, Bedrock/온프렘 네트워크, PostgreSQL 및 Kubernetes 검증과 부하/보안 검토가 필요합니다.

@@ -1,6 +1,9 @@
+import csv
+import io
+import json
 import time
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
 
 from .auth import Actor, actor
@@ -118,6 +121,53 @@ def audit_log(
             ],
             "total": total,
         }
+
+
+@router.get("/audit/export")
+def export_audit(
+    request: Request,
+    days: int = Query(30, ge=1, le=90),
+    action: str = "",
+    a: Actor = Depends(actor),
+):
+    a.admin()
+    query = select(Audit).where(Audit.created_at >= time.time() - days * 86400)
+    if action:
+        query = query.where(Audit.action == action)
+    query = query.order_by(Audit.created_at.desc(), Audit.id.desc()).limit(100001)
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(["id", "created_at", "actor_id", "action", "target_id", "details"])
+    with request.app.state.db.session() as s:
+        rows = s.scalars(query).all()
+        if len(rows) > 100000:
+            raise HTTPException(422, "Export exceeds 100,000 rows; choose a shorter window")
+        for row in rows:
+            values = [
+                row.id,
+                row.created_at,
+                row.actor_id,
+                row.action,
+                row.target_id,
+                json.dumps(row.details, ensure_ascii=False),
+            ]
+            writer.writerow(
+                [
+                    "'" + value
+                    if isinstance(value, str)
+                    and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@"))
+                    else value
+                    for value in values
+                ]
+            )
+    return Response(
+        output.getvalue(),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="aag-audit.csv"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @router.get("/allowlist")
