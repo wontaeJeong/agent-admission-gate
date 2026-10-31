@@ -11,3 +11,6 @@
 - Board feature flag is enforced in both API and UI, disabled in default/stg/prod examples.
 - Validate relevant work using `uv run pytest`, `uv run ruff check backend`, `uv run ruff format --check backend`, and `cd frontend && npm run build && npm test`. Browser behavior: `npm run test:e2e`. Docs: `cd docs && npm run build`.
 - One process and one replica until durable scheduling/claims replace the in-memory runner. Do not add replicas by changing YAML alone.
+- Deliver changes in small, independently reviewable feature PRs; validate each change and merge only after required checks pass.
+- For every PR that changes UI behavior or appearance, include representative screenshots in the PR description or comments, covering affected states and layouts. Do not expose real user data or secrets in captures.
+- Record mistakes and failures encountered during work in `docs/engineering/lessons-learned.md`, including their cause, resolution, and a concrete prevention step. Do not record credentials, personal data, or sensitive logs.
