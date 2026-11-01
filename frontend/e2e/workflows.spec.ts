@@ -1,4 +1,13 @@
 import { expect, test } from "@playwright/test";
+async function theme(page: any, target: string) {
+  await page.getByRole("button", { name: /계정 메뉴/ }).click();
+  await page.getByRole("menuitem", { name: target }).click();
+}
+async function palette(page: any, target: string) {
+  await page.getByRole("button", { name: /계정 메뉴/ }).click();
+  await page.getByRole("menuitem", { name: "화면 설정" }).hover();
+  await page.getByRole("menuitemradio", { name: target }).click();
+}
 async function login(page: any) {
   await page.goto("/login");
   await page.getByLabel("사용자명").fill("admin");
@@ -34,7 +43,7 @@ test("dashboard filters, theme-driven logo, keys and responsive navigation", asy
   const before = await page
     .locator(".brand-gate")
     .evaluate((el) => getComputedStyle(el).fill);
-  await page.getByLabel("색상 팔레트").selectOption("teal");
+  await palette(page, "Teal");
   const after = await page
     .locator(".brand-gate")
     .evaluate((el) => getComputedStyle(el).fill);
@@ -43,10 +52,10 @@ test("dashboard filters, theme-driven logo, keys and responsive navigation", asy
     "href",
     /data:image\/svg\+xml/,
   );
-  await page.getByLabel("테마 전환").click();
+  await theme(page, "라이트 모드");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByLabel("색상 팔레트").selectOption("plum");
-  await page.getByLabel("테마 전환").click();
+  await palette(page, "Plum");
+  await theme(page, "다크 모드");
   await page.getByRole("link", { name: "API 키", exact: true }).click();
   await page.getByLabel("키 이름").fill("e2e-" + Date.now());
   await page.getByRole("button", { name: "발급", exact: true }).click();
@@ -105,7 +114,7 @@ test("ZIP scan, findings, request review, markdown and board privacy controls", 
   });
   await page.getByRole("tab", { name: "Raw JSON", exact: true }).click();
   await expect(page.locator("pre")).toBeVisible();
-  await page.getByLabel("테마 전환").click();
+  await theme(page, "라이트 모드");
   expect(
     await page
       .locator("pre")

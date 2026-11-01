@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState, type FormEvent } from "react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Link,
   NavLink,
@@ -11,6 +12,8 @@ import {
   BookOpen,
   CircleHelp,
   ClipboardList,
+  ChevronsUpDown,
+  ChevronRight,
   Info,
   KeyRound,
   LayoutDashboard,
@@ -194,49 +197,107 @@ export default function App() {
             )}
           </nav>
           <footer className="sidebar-footer">
-            <div className="user-line">
-              <span className="avatar">
-                {user.name.slice(0, 1).toUpperCase()}
-              </span>
-              <span>
-                <b>{user.name}</b>
-                <small>
-                  {user.role}
-                  {user.reviewer ? " · reviewer" : ""}
-                </small>
-              </span>
-              <button
-                className="icon-button"
-                aria-label={t("로그아웃", "Sign out")}
-                onClick={async () => {
-                  await send("/auth/logout", {});
-                  setUser(null);
-                }}
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger
+                className="user-line account-trigger"
+                aria-label={t(
+                  `계정 메뉴: ${user.name}`,
+                  `Account menu: ${user.name}`,
+                )}
               >
-                <LogOut size={16} />
-              </button>
-            </div>
-            <div className="preferences">
-              <button
-                className="icon-button"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-                aria-label={t("테마 전환", "Toggle theme")}
-              >
-                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-              </button>
-              <select
-                aria-label={t("색상 팔레트", "Color palette")}
-                value={palette}
-                onChange={(e) => setPalette(e.target.value)}
-              >
-                <option value="plum">Plum</option>
-                <option value="teal">Teal</option>
-                <option value="blue">Blue</option>
-              </select>
-              <button onClick={() => setLang(lang === "ko" ? "en" : "ko")}>
-                {lang === "ko" ? "EN" : "한국어"}
-              </button>
-            </div>
+                <span className="avatar">
+                  {user.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span>
+                  <b>{user.name}</b>
+                  <small>
+                    {user.role}
+                    {user.reviewer ? " · reviewer" : ""}
+                  </small>
+                </span>
+                <ChevronsUpDown size={16} />
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content
+                  className="account-menu"
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                >
+                  <DropdownMenu.Label className="account-label">
+                    {user.name}{" "}
+                    <small>
+                      {user.role}
+                      {user.reviewer ? " · reviewer" : ""}
+                    </small>
+                  </DropdownMenu.Label>
+                  <DropdownMenu.Separator className="account-separator" />
+                  <DropdownMenu.Item
+                    className="account-item"
+                    onSelect={() =>
+                      setTheme(theme === "dark" ? "light" : "dark")
+                    }
+                  >
+                    {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+                    {theme === "dark"
+                      ? t("라이트 모드", "Light mode")
+                      : t("다크 모드", "Dark mode")}
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Sub>
+                    <DropdownMenu.SubTrigger className="account-item">
+                      <Settings size={16} />
+                      {t("화면 설정", "Display settings")}
+                      <ChevronRight size={15} className="account-arrow" />
+                    </DropdownMenu.SubTrigger>
+                    <DropdownMenu.Portal>
+                      <DropdownMenu.SubContent
+                        className="account-menu account-submenu"
+                        sideOffset={6}
+                      >
+                        <DropdownMenu.Label className="account-label">
+                          {t("색상 팔레트", "Color palette")}
+                        </DropdownMenu.Label>
+                        <DropdownMenu.RadioGroup
+                          value={palette}
+                          onValueChange={setPalette}
+                        >
+                          {["plum", "teal", "blue"].map((p) => (
+                            <DropdownMenu.RadioItem
+                              key={p}
+                              value={p}
+                              className="account-item"
+                            >
+                              <DropdownMenu.ItemIndicator>
+                                ✓
+                              </DropdownMenu.ItemIndicator>
+                              {p[0].toUpperCase() + p.slice(1)}
+                            </DropdownMenu.RadioItem>
+                          ))}
+                        </DropdownMenu.RadioGroup>
+                        <DropdownMenu.Separator className="account-separator" />
+                        <DropdownMenu.Item
+                          className="account-item"
+                          onSelect={() => setLang(lang === "ko" ? "en" : "ko")}
+                        >
+                          {lang === "ko" ? "English" : "한국어"}
+                        </DropdownMenu.Item>
+                      </DropdownMenu.SubContent>
+                    </DropdownMenu.Portal>
+                  </DropdownMenu.Sub>
+                  <DropdownMenu.Separator className="account-separator" />
+                  <DropdownMenu.Item
+                    className="account-item"
+                    onSelect={async () => {
+                      await send("/auth/logout", {});
+                      setUser(null);
+                    }}
+                  >
+                    <LogOut size={16} />
+                    {t("로그아웃", "Sign out")}
+                  </DropdownMenu.Item>
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </footer>
         </aside>
         <div className="workspace">
