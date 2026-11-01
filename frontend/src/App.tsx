@@ -148,12 +148,10 @@ export default function App() {
               <ListChecks size={17} />
               {t("작업 목록", "Scans")}
             </NavLink>
-            {user.reviewer && (
-              <NavLink to="/reviews">
-                <ShieldCheck size={17} />
-                {t("검토", "Reviews")}
-              </NavLink>
-            )}
+            <NavLink to="/reviews">
+              <ShieldCheck size={17} />
+              {t("검토", "Reviews")}
+            </NavLink>
             <div className="nav-group-label">{t("연동", "CONNECT")}</div>
             <NavLink to="/guide">
               <BookOpen size={17} />

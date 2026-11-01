@@ -15,30 +15,58 @@ import { useApp, useText } from "../context";
 import { Admission, Comments, Findings } from "./Scans";
 export function Reviews() {
   const [params, setParams] = useSearchParams(),
+    { user } = useApp(),
+    staff = user.role === "admin" || user.reviewer,
     t = useText(),
-    tab = params.get("tab") || "pending",
+    tab = staff ? params.get("tab") || "pending" : "mine",
+    pendingOnly = tab === "mine" && params.get("status") === "pending",
     page = Number(params.get("page") || 1),
-    load = useLoad(`/reviews?tab=${tab}&page=${page}`);
+    load = useLoad(
+      `/reviews?tab=${tab}&page=${page}${pendingOnly ? "&status=pending" : ""}`,
+    );
   return (
     <>
       <PageTitle
         eyebrow="HUMAN REVIEW"
         title={t("검토", "Reviews")}
         description={t(
-          "위험 근거와 요청 사유를 확인하고 반입 여부를 결정합니다.",
-          "Review evidence and requests before deciding admission.",
+          user.reviewer
+            ? "위험 근거와 요청 사유를 확인하고 반입 여부를 결정합니다."
+            : staff
+              ? "검토 요청과 진행 상황을 확인합니다."
+              : "내가 요청한 검토의 진행 상황과 결정을 확인합니다.",
+          user.reviewer
+            ? "Review evidence and requests before deciding admission."
+            : staff
+              ? "View review requests and their progress."
+              : "Track your review requests and decisions.",
         )}
       />
       <Tabs
-        values={[
-          ["pending", t("검토 필요", "Needs review")],
-          ["mine", t("내 요청", "My requests")],
-          ["approved", t("승인됨", "Approved")],
-          ["all", t("전체", "All")],
-        ]}
+        values={
+          staff
+            ? [
+                ["pending", t("검토 필요", "Needs review")],
+                ["mine", t("내 요청", "My requests")],
+                ["approved", t("승인됨", "Approved")],
+                ["all", t("전체", "All")],
+              ]
+            : [["mine", t("내 요청", "My requests")]]
+        }
         selected={tab}
         onChange={(v) => setParams({ tab: v, page: "1" })}
       />
+      {pendingOnly && (
+        <p className="panel-note">
+          {t(
+            "대기 중인 내 요청만 표시합니다.",
+            "Showing only your pending requests.",
+          )}{" "}
+          <button onClick={() => setParams({ tab: "mine" })}>
+            {t("전체 보기", "Show all")}
+          </button>
+        </p>
+      )}
       <State {...load}>
         {load.data && (
           <section className="panel">
@@ -77,7 +105,13 @@ export function Reviews() {
             <Pagination
               page={page}
               total={load.data.total}
-              onChange={(v) => setParams({ tab, page: String(v) })}
+              onChange={(v) =>
+                setParams({
+                  tab,
+                  page: String(v),
+                  ...(pendingOnly ? { status: "pending" } : {}),
+                })
+              }
             />
           </section>
         )}

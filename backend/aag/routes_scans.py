@@ -222,6 +222,7 @@ def request_review(job_id: str, data: Reason, request: Request, a: Actor = Depen
 def reviews(
     request: Request,
     tab: Literal["pending", "mine", "approved", "all"] = "pending",
+    status: Literal["pending", "approved", "rejected"] | None = None,
     page: int = Query(1, ge=1),
     a: Actor = Depends(actor),
 ):
@@ -231,6 +232,8 @@ def reviews(
         query = query.where(Review.requester_id == a.id)
     if tab in {"pending", "approved"}:
         query = query.where(Review.status == tab)
+    if status:
+        query = query.where(Review.status == status)
     with request.app.state.db.session() as s:
         total = s.scalar(select(func.count()).select_from(query.subquery()))
         return {
