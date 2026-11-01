@@ -248,7 +248,13 @@ export function Dashboard() {
             />
             {tab === "attention" && (
               <div className="attention-list">
-                <Link to="/reviews?tab=pending">
+                <Link
+                  to={
+                    scope === "personal"
+                      ? "/reviews?tab=mine&status=pending"
+                      : "/reviews?tab=pending"
+                  }
+                >
                   <span className="attention-icon">
                     <ShieldAlert size={20} />
                   </span>
