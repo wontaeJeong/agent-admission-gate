@@ -42,3 +42,9 @@
 - Failure: the first Playwright Chromium download returned a truncated archive in this environment.
 - Resolution: Playwright retried against its alternate mirror and the browser tests ran successfully.
 - Prevention: verify browser installation and run the browser suite before relying on screenshots; retain the retry output when diagnosing download failures.
+
+### Mobile account submenu (2026-11-02)
+
+- Failure: the nested account menu extended beyond a 390px viewport despite being visible to the browser.
+- Resolution: reduce menu widths on small screens and verify the submenu's bounding box.
+- Prevention: inspect narrow viewport screenshots and assert horizontal menu bounds, not visibility alone.

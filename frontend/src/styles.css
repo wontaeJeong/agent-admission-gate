@@ -431,6 +431,65 @@ strong {
   align-items: center;
   gap: 9px;
 }
+.account-trigger {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 6px;
+  color: var(--color-ink);
+}
+.account-menu {
+  z-index: 100;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-raised);
+  color: var(--color-ink);
+  box-shadow: 0 12px 30px #0003;
+}
+.account-label {
+  padding: 8px;
+  font-weight: 600;
+}
+.account-label small {
+  display: block;
+  color: var(--color-ink-muted);
+  font-weight: 400;
+}
+.account-separator {
+  height: 1px;
+  background: var(--color-line);
+  margin: 5px 0;
+}
+.account-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+  font-size: 13px;
+}
+.account-item[data-highlighted] {
+  background: var(--color-surface);
+}
+.account-arrow {
+  margin-left: auto;
+}
+.account-submenu {
+  min-width: 150px;
+}
+@media (max-width: 480px) {
+  .account-menu {
+    min-width: 175px;
+  }
+  .account-submenu {
+    min-width: 125px;
+  }
+}
 .user-line > span:nth-child(2) {
   flex: 1;
   min-width: 0;
