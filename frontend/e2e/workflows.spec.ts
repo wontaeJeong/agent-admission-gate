@@ -16,6 +16,21 @@ test("dashboard filters, theme-driven logo, keys and responsive navigation", asy
   await expect(
     page.getByRole("button", { name: "7일", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("tab", { name: "사용량 · 분포" }).click();
+  await page.getByLabel("조회 범위").selectOption("personal");
+  await expect(page.getByRole("link", { name: "CSV ↓" })).toHaveAttribute(
+    "href",
+    "/api/usage/export?days=7&scope=personal",
+  );
+  await page.screenshot({
+    path: "test-results/usage-personal.png",
+    fullPage: true,
+  });
+  await page.getByLabel("조회 범위").selectOption("all");
+  await expect(page.getByRole("link", { name: "CSV ↓" })).toHaveAttribute(
+    "href",
+    "/api/usage/export?days=7&scope=all",
+  );
   const before = await page
     .locator(".brand-gate")
     .evaluate((el) => getComputedStyle(el).fill);

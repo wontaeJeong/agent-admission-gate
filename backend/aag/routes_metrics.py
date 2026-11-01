@@ -130,14 +130,20 @@ def metrics(
 
 
 @router.get("/usage/export")
-def export_usage(request: Request, days: int = Query(30, ge=1, le=90), a: Actor = Depends(actor)):
+def export_usage(
+    request: Request,
+    days: int = Query(30, ge=1, le=90),
+    scope: Literal["personal", "review", "all"] = "personal",
+    a: Actor = Depends(actor),
+):
     a.interactive()
-    query = (
-        select(Usage)
-        .where(Usage.created_at >= time.time() - days * 86400)
-        .order_by(Usage.created_at.desc())
-    )
-    if a.role != "admin":
+    if scope == "all" and a.role != "admin":
+        raise HTTPException(403, "Administrator required")
+    if scope == "review" and not a.reviewer:
+        raise HTTPException(403, "Reviewer required")
+    cutoff = (int(time.time() // 86400) - days + 1) * 86400
+    query = select(Usage).where(Usage.created_at >= cutoff).order_by(Usage.created_at.desc())
+    if scope != "all":
         query = query.where(Usage.user_id == a.id)
     output = io.StringIO()
     writer = csv.writer(output)
