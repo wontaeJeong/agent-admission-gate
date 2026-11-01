@@ -348,7 +348,9 @@ export function Dashboard() {
                 <section className="panel">
                   <div className="panel-heading">
                     <h2>{t("API 사용량", "API usage")}</h2>
-                    <a href={`/api/usage/export?days=${days}`}>CSV ↓</a>
+                    <a href={`/api/usage/export?days=${days}&scope=${scope}`}>
+                      CSV ↓
+                    </a>
                   </div>
                   <div className="chart">
                     <ResponsiveContainer width="100%" height="100%">

@@ -36,3 +36,9 @@
 - 원인: 종료 시점의 권한 오류까지 확인했지만 간헐적 발생 원인은 아직 특정하지 못했다.
 - 대응: 실패를 숨기지 않고 기록했으며 CI 결과와 추가 실행을 확인한다.
 - 예방: 프로세스 종료 관련 테스트 실패는 재실행 결과뿐 아니라 최초 오류와 재현 여부를 함께 기록하고, 원인을 확인하기 전 환경 문제로 단정하지 않는다.
+
+### Browser installation mirror (2026-11-02)
+
+- Failure: the first Playwright Chromium download returned a truncated archive in this environment.
+- Resolution: Playwright retried against its alternate mirror and the browser tests ran successfully.
+- Prevention: verify browser installation and run the browser suite before relying on screenshots; retain the retry output when diagnosing download failures.
