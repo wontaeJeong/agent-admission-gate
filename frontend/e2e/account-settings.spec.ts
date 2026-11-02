@@ -30,6 +30,12 @@ test("edit and reset a personal display name without changing account identity",
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(async () => {
+      const bounds = await page.locator(".sidebar").boundingBox();
+      return bounds ? bounds.x + bounds.width : 0;
+    })
+    .toBeLessThanOrEqual(0);
   await expect(page.getByLabel("표시 이름")).toBeVisible();
   expect(
     await page.evaluate(

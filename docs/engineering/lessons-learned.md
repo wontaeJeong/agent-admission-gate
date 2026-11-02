@@ -173,7 +173,7 @@
 
 - Failure: returning from a revoked key initially showed the old list state, and future-dated records were included in a rolling 30-day total. A mobile capture also caught the sidebar mid-transition.
 - Cause: the list retained its previous fetch, the usage window had no upper bound, and the screenshot was taken immediately after changing viewport size.
-- Resolution: refresh and clamp the list on return, bound the usage window at the current time, and wait for the sidebar to finish moving before capture.
+- Resolution: refresh and clamp the list on return, bound the usage window at the current time, and wait for the sidebar to finish moving before capture. Apply the same wait to the account-settings mobile capture, which independently had the same issue.
 - Prevention: test return navigation after mutations, seed records on both sides of time windows, and check mobile element bounds before screenshots.
 
 ### Isolated browser configuration and pagination bounds (2026-11-02)
