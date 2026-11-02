@@ -128,6 +128,12 @@ export function Keys({ admin = false }: { admin?: boolean }) {
       <State {...load}>
         {load.data?.length ? (
           <div className="key-list">
+            <p className="panel-note">
+              {t(
+                "키 사용량은 REST 및 MCP HTTP 요청입니다. MCP HTTP 집계는 이 버전부터 시작되며 이전의 일부 도구 호출은 제외됩니다.",
+                "Key usage counts REST and MCP HTTP requests. MCP HTTP recording starts with this version; earlier partial tool calls are excluded.",
+              )}
+            </p>
             {load.data.map((k: any) => (
               <article className="panel key-card" key={k.id}>
                 <header>
@@ -169,10 +175,10 @@ export function Keys({ admin = false }: { admin?: boolean }) {
                     </div>
                   )}
                   <div>
-                    <dt>{t("사용 추이", "30-day usage")}</dt>
+                    <dt>{t("30일 HTTP 사용량", "30-day HTTP usage")}</dt>
                     <dd>
                       {k.requests_30d}
-                      {t("회 · ", " calls · ")}
+                      {t("요청 · ", " requests · ")}
                       {k.active_days_30d}
                       {t("일 사용", " active days")}
                     </dd>

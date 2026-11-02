@@ -18,8 +18,10 @@ from .routes_boards import router as boards_router
 from .routes_identity import oidc_callback
 from .routes_identity import router as identity_router
 from .routes_metrics import router as metrics_router
+from .routes_profile import router as profile_router
 from .routes_scans import router as scans_router
 from .service import ScanService
+from .usage import ensure_mcp_http_start
 
 
 def create_app(settings=None):
@@ -50,6 +52,9 @@ def create_app(settings=None):
                             password_hash=password_hash(password),
                         )
                     )
+            # This is collection metadata, not a request. Preserve the first
+            # deployment boundary so earlier days are not presented as zero.
+            ensure_mcp_http_start(s)
         scans.recover()
         async with mcp_app.lifespan(app):
             yield
@@ -84,62 +89,81 @@ def create_app(settings=None):
     @app.middleware("http")
     async def security_and_usage(request: Request, call_next):
         start = time.monotonic()
-        # Enforce limits before multipart parsing; chunked bodies are bounded below.
-        size = request.headers.get("content-length")
-        if size and (not size.isdigit() or int(size) > settings.max_upload_bytes + 1_000_000):
-            return JSONResponse({"detail": "Request too large"}, status_code=413)
-        if request.method in {"POST", "PUT", "PATCH"}:
-            received = 0
-            original_receive = request._receive
+        path = request.url.path
+        is_mcp = path == "/mcp" or path.startswith("/mcp/")
+        usage_kind = "mcp_http" if is_mcp else "api" if path.startswith("/api/") else None
+        response = None
+        try:
+            # Enforce limits before multipart parsing; chunked bodies are bounded below.
+            size = request.headers.get("content-length")
+            if size and (not size.isdigit() or int(size) > settings.max_upload_bytes + 1_000_000):
+                response = JSONResponse({"detail": "Request too large"}, status_code=413)
+            else:
+                if request.method in {"POST", "PUT", "PATCH"}:
+                    received = 0
+                    original_receive = request._receive
 
-            async def bounded_receive():
-                nonlocal received
-                message = await original_receive()
-                received += len(message.get("body", b""))
-                if received > settings.max_upload_bytes + 1_000_000:
-                    raise HTTPException(413, "Request too large")
-                return message
+                    async def bounded_receive():
+                        nonlocal received
+                        message = await original_receive()
+                        received += len(message.get("body", b""))
+                        if received > settings.max_upload_bytes + 1_000_000:
+                            raise HTTPException(413, "Request too large")
+                        return message
 
-            request._receive = bounded_receive
-        if request.url.path.startswith("/mcp"):
-            try:
-                authenticate(db, settings, request.headers.get("authorization"))
-            except HTTPException as exc:
-                return JSONResponse(
-                    {"detail": exc.detail},
-                    status_code=exc.status_code,
-                    headers={"WWW-Authenticate": "Bearer"},
+                    request._receive = bounded_receive
+                if is_mcp:
+                    try:
+                        request.state.actor = authenticate(
+                            db, settings, request.headers.get("authorization")
+                        )
+                    except HTTPException as exc:
+                        response = JSONResponse(
+                            {"detail": exc.detail},
+                            status_code=exc.status_code,
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+                if response is None:
+                    response = await call_next(request)
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "same-origin"
+            response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+            if path.startswith("/api") or path == "/sso/callback":
+                response.headers["Cache-Control"] = "no-store"
+            if path != "/api/docs":
+                response.headers["Content-Security-Policy"] = (
+                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net data:; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
                 )
-        response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-        if request.url.path.startswith("/api") or request.url.path == "/sso/callback":
-            response.headers["Cache-Control"] = "no-store"
-        if request.url.path != "/api/docs":
-            response.headers["Content-Security-Policy"] = (
-                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net data:; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-            )
-        if settings.cookie_secure:
-            response.headers["Strict-Transport-Security"] = "max-age=31536000"
-        if request.url.path.startswith("/api/"):
-            a = getattr(request.state, "actor", None)
-            route = request.scope.get("route")
-            with db.session.begin() as s:
-                s.add(
-                    Usage(
-                        user_id=a.id if a else None,
-                        key_id=a.key_id if a else None,
-                        kind="api",
-                        route=getattr(route, "path", "/api/unknown"),
-                        status=response.status_code,
-                        latency_ms=(time.monotonic() - start) * 1000,
+            if settings.cookie_secure:
+                response.headers["Strict-Transport-Security"] = "max-age=31536000"
+            return response
+        finally:
+            if usage_kind:
+                a = getattr(request.state, "actor", None)
+                route = request.scope.get("route")
+                # Never store request URLs, query strings, headers or bodies.
+                route_name = "/mcp" if is_mcp else getattr(route, "path", "/api/unknown")
+                with db.session.begin() as s:
+                    s.add(
+                        Usage(
+                            user_id=a.id if a else None,
+                            key_id=a.key_id if a else None,
+                            kind=usage_kind,
+                            route=route_name,
+                            status=response.status_code if response is not None else 500,
+                            latency_ms=(time.monotonic() - start) * 1000,
+                        )
                     )
-                )
-        return response
 
-    for router in (identity_router, scans_router, admin_router, metrics_router, boards_router):
+    for router in (
+        identity_router,
+        scans_router,
+        admin_router,
+        metrics_router,
+        boards_router,
+        profile_router,
+    ):
         app.include_router(router)
 
     @app.get("/health/live")

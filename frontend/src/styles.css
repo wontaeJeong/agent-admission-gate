@@ -479,6 +479,25 @@ strong {
 .account-arrow {
   margin-left: auto;
 }
+.account-settings {
+  display: grid;
+  gap: 16px;
+  max-width: 850px;
+}
+.account-information {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+}
+.account-information dt {
+  color: var(--color-ink-muted);
+  font-size: 12px;
+}
+.account-information dd {
+  margin: 6px 0 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 .account-submenu {
   min-width: 150px;
 }

@@ -40,7 +40,13 @@ Grype는 데이터베이스가 없거나 만료/오류로 검사에 실패하면
 
 ## 관측과 비용
 
-REST/MCP 호출 수, LLM provider/model/latency/status, input/output/cache token을 기록합니다. 7/14/30/90일 UTC 집계와 CSV를 제공합니다. 모델 호출은 자동 재시도하지 않으므로 하나의 실제 호출을 하나의 usage record로 기록합니다. 응답에 토큰이 없으면 null이며 결측 요청 수를 함께 보여줍니다. 비용 단가/청구서가 없으면 0으로 계산하지 않습니다.
+REST와 MCP는 각각 서버가 받은 HTTP 요청을 기록합니다. MCP 초기화, 도구 목록 조회, 도구 호출, 오류 응답도 각각 HTTP 요청 한 건입니다. HTTP 오류는 상태 코드 400 이상이며 MCP 도구 오류가 HTTP 200으로 전달될 수 있으므로 도구 성공률이 아닙니다. MCP HTTP 기록은 이 버전 배포 이후부터 수집됩니다. 이전에 기록된 일부 MCP 도구 호출은 별도 항목으로 보존하고 HTTP 요청으로 환산하지 않습니다. 인증 실패 등으로 사용자가 확인되지 않은 요청은 관리자 전체 범위에만 표시됩니다. 요청 본문·인증정보·쿼리 문자열·임의 MCP 경로는 usage에 저장하지 않습니다.
+
+시작 표식은 최초 수집 시점만 기록합니다. 이후 이전 버전으로 되돌리거나 서비스가 중단된 기간의 수집 공백은 자동 감지하지 못하므로 시작 이후 값도 불완전할 수 있습니다. 배포·복구 이력과 함께 해석하세요.
+
+`GET /api/metrics`는 `rest`, `mcp`, `legacy_mcp_tool_calls`와 일별 `rest_http_requests`, `mcp_http_requests`, `legacy_mcp_tool_calls`를 반환합니다. `mcp_http_observed_since`는 MCP HTTP 집계 시작 시각(Unix 초)입니다. 일별 `mcp_http_coverage`는 시작 전 `unknown`(요청 수 null), 첫날 `partial`, 이후 `possibly_partial`입니다. 이후에도 공백이 없었다고 보장하지 않습니다. 내부 시작 시각 표식은 사용 이벤트나 CSV에 포함되지 않으므로 보존 정책에서 삭제하지 않아야 합니다. 표식이 없으면 시작 시각과 일별 MCP 데이터는 null입니다. 기존 `api`와 `series.api_requests`는 호환성을 위해 유지되지만 사용 중단 예정이며 REST HTTP와 이전의 일부 MCP 도구 호출이 섞여 있고 새 MCP HTTP 요청은 포함하지 않습니다. 총 요청 수로 사용하지 말고 새 필드로 전환하세요. `deprecated_fields`가 이 필드를 식별합니다. CSV는 기존 `kind`를 유지하고 `protocol`과 `unit`을 추가해 `http_request`, `legacy_partial_tool_call`, `model_request`를 구분합니다. 개인·검토 범위의 usage는 본인 기록이며 전체 범위는 관리자 전용입니다.
+
+LLM provider/model/latency/status와 input/output/cache token도 기록합니다. 7/14/30/90일 UTC 집계와 CSV를 제공합니다. 모델 호출은 자동 재시도하지 않으므로 하나의 실제 호출을 하나의 usage record로 기록합니다. 응답에 토큰이 없으면 null이며 결측 요청 수를 함께 보여줍니다. 비용 단가/청구서가 없으면 0으로 계산하지 않습니다.
 
 관리자는 대화형 로그인 세션으로 `GET /api/admin/audit/export?days=30`에서 감사 기록 CSV를 내려받을 수 있습니다. `days`는 1~90일이며 `action`으로 정확히 일치하는 이벤트를 선택할 수 있습니다. 한 번에 10만 건을 초과하면 더 짧은 기간을 선택해야 합니다. API 키로는 접근할 수 없으며, 내려받은 파일은 조직의 감사 기록 접근·보관 정책에 따라 보호해야 합니다.
 

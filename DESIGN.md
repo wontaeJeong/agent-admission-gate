@@ -34,3 +34,5 @@ Dashboard: personal/review/all scope gated by role; 7/14/30/90 days; attention/d
 Scan detail: Admission/comments/findings/actions/engines/metadata/timeline/Raw JSON. Findings use list + selected evidence, severity filtering, exact location and remediation. Execution status and verdict are different concepts. Cancellation and revocation require an explicit UI action; irreversible revocation has a reason and confirmation form.
 
 Code blocks remain dark in light mode. Pretendard Variable 1.3.9 is the UI font; D2Coding is for code. Both fonts are self-hosted with OFL notices and system fallbacks; runtime rendering does not require a font CDN. Markdown never enables raw HTML, external images or unsafe URL schemes.
+
+User settings are accessible from the account menu. An optional, account-specific display name appears in the sidebar; the authenticated account name, authorization, and audit identity stay unchanged. Mode, palette and language remain local to the current browser and are labelled accordingly.

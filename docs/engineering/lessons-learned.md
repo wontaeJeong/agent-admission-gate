@@ -49,33 +49,18 @@
 - Resolution: reduce menu widths on small screens and verify the submenu's bounding box.
 - Prevention: inspect narrow viewport screenshots and assert horizontal menu bounds, not visibility alone.
 
-### Admin key verification (2026-11-02)
+### Profile migration lint (2026-11-02)
 
-- Failure: the first browser-test setup used paths relative to the repository while already inside the frontend directory, and assumed the login form followed the selected language. A later fixture edit also changed an expected count without adding its intended row.
-- Cause: commands and fixtures were written before checking their exact working directory, existing labels, and resulting test data.
-- Resolution: corrected the paths and labels, added the missing synthetic row, and reran the tests. Synthetic credential-bearing responses were separated from assertions so failure output does not print their values.
-- Prevention: inspect the command working directory and existing UI labels first; verify fixture changes before relying on a failing assertion, and keep credentials out of assertion expressions and fixture output.
+- Failure: the new migration did not meet Ruff import ordering.
+- Resolution: sorted the imports and reran lint and migration checks.
+- Prevention: run both Ruff check and format checks on migrations before the full test suite.
+- A temporary Playwright config in the frontend root was picked up by the formatting glob. It was formatted for local verification and excluded from the PR; keep local test configuration formatted or outside checked globs.
 
-### Admin key state and usage windows (2026-11-02)
+### Profile save during session changes (2026-11-02)
 
-- Failure: returning from a revoked key initially showed the old list state, and future-dated records were included in a rolling 30-day total. A mobile capture also caught the sidebar mid-transition.
-- Cause: the list retained its previous fetch, the usage window had no upper bound, and the screenshot was taken immediately after changing viewport size.
-- Resolution: refresh and clamp the list on return, bound the usage window at the current time, and wait for the sidebar to finish moving before capture.
-- Prevention: test return navigation after mutations, seed records on both sides of time windows, and check mobile element bounds before screenshots.
-
-### Isolated browser configuration and pagination bounds (2026-11-02)
-
-- Failure: the first complete browser suite failed on a boards workflow, and the formatting check reported a temporary configuration file. Oversized page numbers also caused a database offset overflow during regression testing.
-- Cause: the isolated test configuration did not reproduce the normal boards flag, its temporary TypeScript file was not formatted before the check, and page inputs had no database-safe upper bound.
-- Resolution: match the normal test flags, format and remove the temporary configuration, and validate pagination inputs before querying.
-- Prevention: compare isolated test settings with the repository configuration before running the suite, exclude temporary files from final checks, and test extreme numeric inputs at API boundaries.
-
-### Admin key API and MCP event compatibility (2026-11-02)
-
-- Failure: the first admin-key implementation changed an existing array response and counted historical MCP tool events as HTTP requests.
-- Cause: the admin endpoint's external consumers and the concurrent MCP HTTP instrumentation were not accounted for in the initial design.
-- Resolution: retain the array endpoint, provide a separate paginated search endpoint, and label REST HTTP, MCP HTTP and legacy tool records separately with explicit MCP collection coverage.
-- Prevention: check existing endpoint contracts and coordinate event units and collection boundaries across concurrent features before defining metrics or UI labels.
+- Failure: a delayed profile-save response could update a later login session's sidebar, and typing during a pending save could be overwritten.
+- Resolution: re-fetch authoritative profile data for the current account after each completed save, keep successful saves synchronized after navigation, and disable the input during save.
+- Prevention: exercise delayed responses across logout and login in a browser test, including unchanged identity data.
 ### Review revisit verification (2026-11-02)
 
 - Failure: a browser-test setup command used repository-relative paths while already in the frontend directory, so it could not create the test files.
@@ -103,6 +88,108 @@
 - Failure: a file-creation command used a repository-relative prefix while already in the frontend directory. It was rerun from the repository root with the correct paths.
 - Prevention: check the command's working directory before constructing relative output paths.
 
+### Parallel changes to lessons (2026-11-02)
+
+- Failure: independent branches appended to the same end of the lessons file and Git reported a merge conflict.
+- Resolution: retained both branches’ entries and verified the merged diff.
+- Prevention: rebase each PR on current main and review shared documentation before merging.
+### Review branch refresh (2026-11-02)
+
+- Failure: a connector upload helper assumed that temporary orchestration metadata from an earlier task was still available after the handoff.
+- Resolution: reconstruct the file list and object hashes from the committed Git tree before uploading.
+- Prevention: derive handoff state from durable repository objects rather than in-memory tool state.
+
+### Usage accounting formatting check (2026-11-02)
+
+- Failure: the first `ruff format --check` run reported unformatted new tests and metric helpers.
+- Cause: the format check was run before formatting the edited files.
+- Resolution: ran the repository formatter on the changed Python files.
+- Prevention: format changed files before running the final lint and format checks.
+
+### Usage browser verification setup (2026-11-02)
+
+- Failures: a formatter ran from the repository root and found none of the frontend paths; the first usage browser test expected an API-key creation response of 200 instead of 201.
+- Cause: the command's working directory and the existing route's documented status were not checked first.
+- Resolution: reran the local formatter from `frontend` and corrected the browser test to expect 201.
+- Prevention: confirm the command directory and inspect route status codes before writing browser setup assertions.
+
+### Usage screenshot timing (2026-11-02)
+
+- Failure: the first mobile screenshot caught the sidebar sliding out and the chart bars still animating.
+- Cause: the capture followed a viewport change and data load before animations had finished.
+- Resolution: request reduced motion, disable screenshot animations, and wait for a populated chart bar before capture.
+- Prevention: inspect screenshots at each viewport and wait for visible chart geometry rather than only page visibility.
+
+### Unobserved usage history and repeatable browser tests (2026-11-02)
+
+- Failures: review found that pre-collection MCP HTTP days appeared as zero, and a second browser test run on the same database failed its absolute count assertions.
+- Cause: zero-filled buckets assumed data existed before collection began, while the browser fixture reused its database across runs.
+- Resolution: persist the collection-start boundary, mark earlier days unknown and the first day partial, and compare browser counts to scoped baselines with a unique key.
+- Prevention: test the collection boundary explicitly and rerun stateful browser scenarios against the same database.
+
+### Responsive chart capture retry (2026-11-02)
+
+- Failure: the browser test timed out while waiting for a chart bar after resizing.
+- Cause: the chart replaced its SVG path during a responsive rerender, leaving an in-page wait attached to a detached element.
+- Resolution: poll a fresh locator and wait for its geometry to stabilize.
+- Prevention: reacquire responsive chart elements while waiting instead of holding a DOM node through a resize.
+
+### Coverage note browser assertion (2026-11-02)
+
+- Failure: a browser assertion still expected the original sentence after adding the rollback limitation.
+- Cause: the test matched an entire sentence whose wording had intentionally changed.
+- Resolution: assert the two meaningful coverage statements independently.
+- Prevention: keep browser assertions focused on the behavior or facts the UI must communicate.
+
+### Dashboard scope fixture after integration (2026-11-02)
+
+- Failure: two dashboard-scope browser tests timed out after merging the usage changes.
+- Cause: their mocked metrics response lacked the new REST and MCP fields needed by the dashboard.
+- Resolution: update the fixture to include the corresponding usage fields and rerun the combined suite.
+- Prevention: inspect and update shared API response fixtures whenever a screen gains required response fields.
+
+### Git push authentication (2026-11-02)
+
+- Failure: direct Git push could not authenticate without an interactive credential prompt.
+- Cause: the local Git remote lacked usable push credentials in this environment.
+- Resolution: publish the branch through the connected GitHub service.
+- Prevention: verify the intended publication channel before attempting a push and keep credential prompts disabled in automation.
+
+### Main refresh object race (2026-11-02)
+
+- Failure: an immediate object lookup failed while a concurrent fetch was still updating the local object store.
+- Cause: the lookup ran before the fetch completed.
+- Resolution: retried after the fetch reported the updated branch and verified the commit before rebasing.
+- Prevention: wait for the fetched ref or object before starting dependent Git operations.
+
+### Admin key verification (2026-11-02)
+
+- Failure: the first browser-test setup used paths relative to the repository while already inside the frontend directory, and assumed the login form followed the selected language. A later fixture edit also changed an expected count without adding its intended row.
+- Cause: commands and fixtures were written before checking their exact working directory, existing labels, and resulting test data.
+- Resolution: corrected the paths and labels, added the missing synthetic row, and reran the tests. Synthetic credential-bearing responses were separated from assertions so failure output does not print their values.
+- Prevention: inspect the command working directory and existing UI labels first; verify fixture changes before relying on a failing assertion, and keep credentials out of assertion expressions and fixture output.
+
+### Admin key state and usage windows (2026-11-02)
+
+- Failure: returning from a revoked key initially showed the old list state, and future-dated records were included in a rolling 30-day total. A mobile capture also caught the sidebar mid-transition.
+- Cause: the list retained its previous fetch, the usage window had no upper bound, and the screenshot was taken immediately after changing viewport size.
+- Resolution: refresh and clamp the list on return, bound the usage window at the current time, and wait for the sidebar to finish moving before capture.
+- Prevention: test return navigation after mutations, seed records on both sides of time windows, and check mobile element bounds before screenshots.
+
+### Isolated browser configuration and pagination bounds (2026-11-02)
+
+- Failure: the first complete browser suite failed on a boards workflow, and the formatting check reported a temporary configuration file. Oversized page numbers also caused a database offset overflow during regression testing.
+- Cause: the isolated test configuration did not reproduce the normal boards flag, its temporary TypeScript file was not formatted before the check, and page inputs had no database-safe upper bound.
+- Resolution: match the normal test flags, format and remove the temporary configuration, and validate pagination inputs before querying.
+- Prevention: compare isolated test settings with the repository configuration before running the suite, exclude temporary files from final checks, and test extreme numeric inputs at API boundaries.
+
+### Admin key API and MCP event compatibility (2026-11-02)
+
+- Failure: the first admin-key implementation changed an existing array response and counted historical MCP tool events as HTTP requests.
+- Cause: the admin endpoint's external consumers and the concurrent MCP HTTP instrumentation were not accounted for in the initial design.
+- Resolution: retain the array endpoint, provide a separate paginated search endpoint, and label REST HTTP, MCP HTTP and legacy tool records separately with explicit MCP collection coverage.
+- Prevention: check existing endpoint contracts and coordinate event units and collection boundaries across concurrent features before defining metrics or UI labels.
+
 ### Concurrent lessons entries (2026-11-02)
 
 - Failure: integrating the current main branch produced a conflict in the lessons log.
@@ -116,11 +203,6 @@
 - Cause: setup order and independently changed mock fixtures were missed.
 - Resolution: create the worktree from the existing checkout, and coordinate the dashboard fixture updates with the MCP metrics work.
 - Prevention: create a worktree before selecting it as a working directory, and run combined browser tests when concurrent features share an API response.
-### Review branch refresh (2026-11-02)
-
-- Failure: a connector upload helper assumed that temporary orchestration metadata from an earlier task was still available after the handoff.
-- Resolution: reconstruct the file list and object hashes from the committed Git tree before uploading.
-- Prevention: derive handoff state from durable repository objects rather than in-memory tool state.
 
 ### Browser verification after main update (2026-11-02)
 
