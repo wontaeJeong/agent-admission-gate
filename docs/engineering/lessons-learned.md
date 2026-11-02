@@ -98,3 +98,66 @@
 - Failure: a connector upload helper assumed that temporary orchestration metadata from an earlier task was still available after the handoff.
 - Resolution: reconstruct the file list and object hashes from the committed Git tree before uploading.
 - Prevention: derive handoff state from durable repository objects rather than in-memory tool state.
+
+### Usage accounting formatting check (2026-11-02)
+
+- Failure: the first `ruff format --check` run reported unformatted new tests and metric helpers.
+- Cause: the format check was run before formatting the edited files.
+- Resolution: ran the repository formatter on the changed Python files.
+- Prevention: format changed files before running the final lint and format checks.
+
+### Usage browser verification setup (2026-11-02)
+
+- Failures: a formatter ran from the repository root and found none of the frontend paths; the first usage browser test expected an API-key creation response of 200 instead of 201.
+- Cause: the command's working directory and the existing route's documented status were not checked first.
+- Resolution: reran the local formatter from `frontend` and corrected the browser test to expect 201.
+- Prevention: confirm the command directory and inspect route status codes before writing browser setup assertions.
+
+### Usage screenshot timing (2026-11-02)
+
+- Failure: the first mobile screenshot caught the sidebar sliding out and the chart bars still animating.
+- Cause: the capture followed a viewport change and data load before animations had finished.
+- Resolution: request reduced motion, disable screenshot animations, and wait for a populated chart bar before capture.
+- Prevention: inspect screenshots at each viewport and wait for visible chart geometry rather than only page visibility.
+
+### Unobserved usage history and repeatable browser tests (2026-11-02)
+
+- Failures: review found that pre-collection MCP HTTP days appeared as zero, and a second browser test run on the same database failed its absolute count assertions.
+- Cause: zero-filled buckets assumed data existed before collection began, while the browser fixture reused its database across runs.
+- Resolution: persist the collection-start boundary, mark earlier days unknown and the first day partial, and compare browser counts to scoped baselines with a unique key.
+- Prevention: test the collection boundary explicitly and rerun stateful browser scenarios against the same database.
+
+### Responsive chart capture retry (2026-11-02)
+
+- Failure: the browser test timed out while waiting for a chart bar after resizing.
+- Cause: the chart replaced its SVG path during a responsive rerender, leaving an in-page wait attached to a detached element.
+- Resolution: poll a fresh locator and wait for its geometry to stabilize.
+- Prevention: reacquire responsive chart elements while waiting instead of holding a DOM node through a resize.
+
+### Coverage note browser assertion (2026-11-02)
+
+- Failure: a browser assertion still expected the original sentence after adding the rollback limitation.
+- Cause: the test matched an entire sentence whose wording had intentionally changed.
+- Resolution: assert the two meaningful coverage statements independently.
+- Prevention: keep browser assertions focused on the behavior or facts the UI must communicate.
+
+### Dashboard scope fixture after integration (2026-11-02)
+
+- Failure: two dashboard-scope browser tests timed out after merging the usage changes.
+- Cause: their mocked metrics response lacked the new REST and MCP fields needed by the dashboard.
+- Resolution: update the fixture to include the corresponding usage fields and rerun the combined suite.
+- Prevention: inspect and update shared API response fixtures whenever a screen gains required response fields.
+
+### Git push authentication (2026-11-02)
+
+- Failure: direct Git push could not authenticate without an interactive credential prompt.
+- Cause: the local Git remote lacked usable push credentials in this environment.
+- Resolution: publish the branch through the connected GitHub service.
+- Prevention: verify the intended publication channel before attempting a push and keep credential prompts disabled in automation.
+
+### Main refresh object race (2026-11-02)
+
+- Failure: an immediate object lookup failed while a concurrent fetch was still updating the local object store.
+- Cause: the lookup ran before the fetch completed.
+- Resolution: retried after the fetch reported the updated branch and verified the commit before rebasing.
+- Prevention: wait for the fetched ref or object before starting dependent Git operations.

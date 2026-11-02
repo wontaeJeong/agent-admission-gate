@@ -38,7 +38,7 @@ docker compose up --build
 - **검토·권한:** user/admin 역할과 독립적인 reviewer 자격, 본인 승인 차단, 사유 필수, 내부 코멘트, 감사 로그, 소스 해시·만료일에 묶인 예외.
 - **인증·연동:** Keycloak 호환 OIDC + PKCE, HttpOnly 세션, 1회 노출 API 키, 개인/관리자 키 관리, 8자리·10분 Device Code Flow, 90일 키, REST·CLI·Remote MCP.
 - **운영 화면:** 역할별 대시보드, Recharts 차트, 7/14/30/90일, 작업 목록/검색, 상세 8개 탭, 관리자 운영·사용자·전체 키·감사·예외·Action·LLM 화면.
-- **사용량:** 실제 REST/MCP 호출, 제공자·모델별 토큰, 캐시 토큰, 지연·실패, CSV. On-prem/Bedrock/SystemOne 구분; 미보고 토큰·비용은 null.
+- **사용량:** REST/MCP HTTP 요청을 별도로 집계하고 이전의 부분 MCP 도구 호출 기록을 구분, 제공자·모델별 토큰, 캐시 토큰, 지연·실패, CSV. MCP HTTP 수집은 이 버전부터 시작하며 HTTP 상태가 도구 성공을 보장하지 않습니다. On-prem/Bedrock/SystemOne 구분; 미보고 토큰·비용은 null.
 - **공지·VOC:** 공지/내부 검토/VOC, Markdown·미리보기, 비공개 글, 내부 코멘트, 상태·고정·읽음·수정 충돌 방지. 기본 비노출: `AAG_BOARDS_ENABLED=false`이면 메뉴와 API 모두 차단.
 - **브랜드:** 기존 Gate/Shield/Check 로고 형태 유지, CSS 브랜드 토큰, 다크/라이트·Plum/Teal/Blue, 런타임 파비콘, Pretendard Variable·D2Coding, 항상 어두운 코드 블록.
 
