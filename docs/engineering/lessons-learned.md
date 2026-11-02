@@ -48,3 +48,24 @@
 - Failure: the nested account menu extended beyond a 390px viewport despite being visible to the browser.
 - Resolution: reduce menu widths on small screens and verify the submenu's bounding box.
 - Prevention: inspect narrow viewport screenshots and assert horizontal menu bounds, not visibility alone.
+
+### Admin key verification (2026-11-02)
+
+- Failure: the first browser-test setup used paths relative to the repository while already inside the frontend directory, and assumed the login form followed the selected language. A later fixture edit also changed an expected count without adding its intended row.
+- Cause: commands and fixtures were written before checking their exact working directory, existing labels, and resulting test data.
+- Resolution: corrected the paths and labels, added the missing synthetic row, and reran the tests. Synthetic credential-bearing responses were separated from assertions so failure output does not print their values.
+- Prevention: inspect the command working directory and existing UI labels first; verify fixture changes before relying on a failing assertion, and keep credentials out of assertion expressions and fixture output.
+
+### Admin key state and usage windows (2026-11-02)
+
+- Failure: returning from a revoked key initially showed the old list state, and future-dated records were included in a rolling 30-day total. A mobile capture also caught the sidebar mid-transition.
+- Cause: the list retained its previous fetch, the usage window had no upper bound, and the screenshot was taken immediately after changing viewport size.
+- Resolution: refresh and clamp the list on return, bound the usage window at the current time, and wait for the sidebar to finish moving before capture.
+- Prevention: test return navigation after mutations, seed records on both sides of time windows, and check mobile element bounds before screenshots.
+
+### Isolated browser configuration and pagination bounds (2026-11-02)
+
+- Failure: the first complete browser suite failed on a boards workflow, and the formatting check reported a temporary configuration file. Oversized page numbers also caused a database offset overflow during regression testing.
+- Cause: the isolated test configuration did not reproduce the normal boards flag, its temporary TypeScript file was not formatted before the check, and page inputs had no database-safe upper bound.
+- Resolution: match the normal test flags, format and remove the temporary configuration, and validate pagination inputs before querying.
+- Prevention: compare isolated test settings with the repository configuration before running the suite, exclude temporary files from final checks, and test extreme numeric inputs at API boundaries.

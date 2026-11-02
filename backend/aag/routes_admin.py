@@ -2,15 +2,15 @@ import csv
 import io
 import json
 import time
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import case, func, or_, select
 
 from .auth import Actor, actor
 from .db import audit, record
-from .models import APIKey, Audit, ExceptionRule, User
+from .models import APIKey, Audit, ExceptionRule, Usage, User
 from .policy import RULES
-from .routes_identity import key_rows
 from .schemas import ExceptionRequest, Reason, UserPatch
 
 router = APIRouter(prefix="/api/admin")
@@ -82,23 +82,173 @@ def update_user(user_id: str, data: UserPatch, request: Request, a: Actor = Depe
     return {"ok": True}
 
 
+def admin_key_record(key: APIKey, owner_name: str, now: float):
+    return {
+        **record(key, ("digest",)),
+        "display_key": "aag_sk_****" + key.suffix,
+        "issuer": owner_name,
+        "state": "revoked"
+        if key.revoked_at is not None
+        else "expired"
+        if key.expires_at <= now
+        else "active",
+    }
+
+
 @router.get("/api-keys")
-def admin_keys(request: Request, a: Actor = Depends(actor)):
+def admin_keys(
+    request: Request,
+    page: int = Query(1, ge=1, le=1_000_000_000),
+    q: str = Query("", max_length=120),
+    state: Literal["all", "active", "expired", "revoked"] = "all",
+    a: Actor = Depends(actor),
+):
     a.admin()
+    now, page_size = time.time(), 20
+    query = select(APIKey, User.name).join(User, APIKey.owner_id == User.id)
+    if q := q.strip():
+        query = query.where(
+            or_(
+                APIKey.name.icontains(q, autoescape=True),
+                APIKey.id.icontains(q, autoescape=True),
+                APIKey.suffix.icontains(q, autoescape=True),
+                User.name.icontains(q, autoescape=True),
+            )
+        )
+    if state == "revoked":
+        query = query.where(APIKey.revoked_at.is_not(None))
+    elif state == "expired":
+        query = query.where(APIKey.revoked_at.is_(None), APIKey.expires_at <= now)
+    elif state == "active":
+        query = query.where(APIKey.revoked_at.is_(None), APIKey.expires_at > now)
     with request.app.state.db.session() as s:
-        return key_rows(s)
+        total = s.scalar(select(func.count()).select_from(query.subquery()))
+        rows = s.execute(
+            query.order_by(APIKey.created_at.desc(), APIKey.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return {
+            "items": [admin_key_record(key, owner, now) for key, owner in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+
+
+@router.get("/api-keys/{key_id}")
+def admin_key_detail(
+    key_id: str,
+    request: Request,
+    usage_page: int = Query(1, ge=1, le=1_000_000_000),
+    audit_page: int = Query(1, ge=1, le=1_000_000_000),
+    a: Actor = Depends(actor),
+):
+    a.admin()
+    now, page_size = time.time(), 20
+    with request.app.state.db.session() as s:
+        row = s.execute(
+            select(APIKey, User.name)
+            .join(User, APIKey.owner_id == User.id)
+            .where(APIKey.id == key_id)
+        ).first()
+        if not row:
+            raise HTTPException(404, "Key not found")
+        key, owner = row
+        usage = select(Usage).where(Usage.key_id == key_id, Usage.kind == "api")
+        recent_filter = (
+            Usage.key_id == key_id,
+            Usage.kind == "api",
+            Usage.created_at >= now - 30 * 86400,
+            Usage.created_at <= now,
+        )
+        requests, days, failures = s.execute(
+            select(
+                func.count(),
+                func.count(func.distinct(func.floor(Usage.created_at / 86400))),
+                func.coalesce(func.sum(case((Usage.status >= 400, 1), else_=0)), 0),
+            ).where(*recent_filter)
+        ).one()
+        routes = s.execute(
+            select(Usage.route, func.count().label("count"))
+            .where(*recent_filter)
+            .group_by(Usage.route)
+            .order_by(func.count().desc(), Usage.route)
+        ).all()
+        usage_total = s.scalar(select(func.count()).select_from(usage.subquery()))
+        usage_rows = s.scalars(
+            usage.order_by(Usage.created_at.desc(), Usage.id.desc())
+            .offset((usage_page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        audit_query = (
+            select(Audit, User.name)
+            .outerjoin(User, Audit.actor_id == User.id)
+            .where(
+                Audit.target_id == key_id,
+                Audit.action.in_(("key.create", "key.revoke", "key.admin_revoke")),
+            )
+        )
+        audit_total = s.scalar(select(func.count()).select_from(audit_query.subquery()))
+        audit_rows = s.execute(
+            audit_query.order_by(Audit.created_at.desc(), Audit.id.desc())
+            .offset((audit_page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return {
+            "key": admin_key_record(key, owner, now),
+            "usage": {
+                "summary": {
+                    "requests_30d": requests,
+                    "active_days_30d": days,
+                    "failures_30d": failures,
+                    "routes_30d": [{"route": route, "count": count} for route, count in routes],
+                },
+                "items": [
+                    {
+                        "id": u.id,
+                        "created_at": u.created_at,
+                        "route": u.route,
+                        "status": u.status,
+                        "latency_ms": u.latency_ms,
+                    }
+                    for u in usage_rows
+                ],
+                "total": usage_total,
+                "page": usage_page,
+                "page_size": page_size,
+            },
+            "audit": {
+                "items": [
+                    {
+                        "id": entry.id,
+                        "created_at": entry.created_at,
+                        "action": entry.action,
+                        "actor": actor_name,
+                        "reason": (entry.details or {}).get("reason"),
+                    }
+                    for entry, actor_name in audit_rows
+                ],
+                "total": audit_total,
+                "page": audit_page,
+                "page_size": page_size,
+            },
+        }
 
 
 @router.post("/api-keys/{key_id}/revoke")
 def revoke(key_id: str, data: Reason, request: Request, a: Actor = Depends(actor)):
     a.admin()
+    reason = data.reason.strip()
+    if len(reason) < 5:
+        raise HTTPException(422, "Revocation reason must contain at least 5 characters")
     with request.app.state.db.session.begin() as s:
         key = s.get(APIKey, key_id)
         if not key:
             raise HTTPException(404, "Key not found")
         if not key.revoked_at:
             key.revoked_at = time.time()
-            audit(s, a.id, "key.admin_revoke", key_id, reason=data.reason, owner_id=key.owner_id)
+            audit(s, a.id, "key.admin_revoke", key_id, reason=reason, owner_id=key.owner_id)
     return {"ok": True}
 
 
