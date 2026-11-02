@@ -23,6 +23,7 @@ from .schemas import (
     NameRequest,
     Reason,
 )
+from .usage import http_request_filter
 
 router = APIRouter(prefix="/api")
 
@@ -218,7 +219,9 @@ def key_rows(s, owner=None):
     for key in s.scalars(q.limit(500)):
         uses = s.scalars(
             select(Usage).where(
-                Usage.key_id == key.id, Usage.created_at >= time.time() - 30 * 86400
+                Usage.key_id == key.id,
+                Usage.created_at >= time.time() - 30 * 86400,
+                http_request_filter(),
             )
         ).all()
         rows.append(

@@ -22,7 +22,7 @@ title: 요구사항 추적과 검증 범위
 | 사이드바/라우트/8개 상세 탭 | App.tsx, Scans.tsx | 브라우저 탐색·모바일 overflow·실 데이터 |
 | 사용자 설정·표시 이름 | routes_profile.py, AccountSettings.tsx | 본인 세션 전용·계정/감사 식별자와 분리, 이름 저장/초기화·이름 소유자 격리, 브라우저 로컬 화면 설정 구분 |
 | 역할별 대시보드/Recharts | Dashboard.tsx, routes_metrics.py | UTC zero-fill, 7/14/30/90, role scope |
-| API·토큰 사용량/CSV | Usage, routes_metrics.py | onprem/bedrock/systemone 분리, null와 0 구분 |
+| API·토큰 사용량/CSV | Usage, routes_metrics.py | REST/MCP HTTP 요청과 이전 부분 MCP 도구 호출 구분, 역할 범위, onprem/bedrock/systemone 분리, null와 0 구분 |
 | 공지/VOC/내부 검토 | routes_boards.py, Boards.tsx | Markdown XSS, visibility, revision conflict, 읽음/상태/고정 |
 | stg 비노출 기능 개발 | AAG_BOARDS_ENABLED | false이면 메뉴와 API 모두 숨김 |
 | Graphite & Plum / light·dark | styles.css | 6개 palette/mode 조합 대비 테스트 |

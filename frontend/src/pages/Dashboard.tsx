@@ -13,6 +13,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -33,6 +34,12 @@ export function Dashboard() {
   const load = useLoad(`/metrics?days=${days}&scope=${scope}`),
     data = load.data,
     scanParams = new URLSearchParams({ scope, days: String(days) });
+  const mcpStart = data?.mcp_http_observed_since;
+  const mcpStartLabel =
+    mcpStart == null
+      ? null
+      : `${new Date(mcpStart * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
+
   return (
     <>
       <PageTitle
@@ -95,9 +102,9 @@ export function Dashboard() {
                 ],
                 [
                   Activity,
-                  t("API 요청", "API requests"),
-                  data.api.requests,
-                  t("REST · MCP 합계", "REST · MCP requests"),
+                  t("기록된 HTTP 요청", "Recorded HTTP requests"),
+                  data.rest.requests + data.mcp.requests,
+                  `REST ${data.rest.requests} · MCP ${data.mcp.requests}`,
                 ],
                 [
                   ListFilter,
@@ -356,7 +363,7 @@ export function Dashboard() {
               <>
                 <section className="panel">
                   <div className="panel-heading">
-                    <h2>{t("API 사용량", "API usage")}</h2>
+                    <h2>{t("기록된 HTTP 요청", "Recorded HTTP requests")}</h2>
                     <a href={`/api/usage/export?days=${days}&scope=${scope}`}>
                       CSV ↓
                     </a>
@@ -380,19 +387,52 @@ export function Dashboard() {
                             border: "1px solid var(--color-line)",
                           }}
                         />
+                        <Legend />
                         <Bar
-                          dataKey="api_requests"
+                          dataKey="rest_http_requests"
+                          name="REST HTTP"
                           fill="var(--color-accent)"
+                          radius={[3, 3, 0, 0]}
+                        />
+                        <Bar
+                          dataKey="mcp_http_requests"
+                          name="MCP HTTP"
+                          fill="var(--color-success)"
                           radius={[3, 3, 0, 0]}
                         />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
                   <p className="panel-note">
-                    {t("오류", "Errors")}: {data.api.errors} ·{" "}
+                    REST HTTP · {t("요청", "Requests")}: {data.rest.requests} ·{" "}
+                    {t("HTTP 오류", "HTTP errors")}: {data.rest.errors} ·{" "}
                     {t("평균 응답", "Mean latency")}:{" "}
-                    {number(data.api.latency_ms)} ms ·{" "}
+                    {number(data.rest.latency_ms)} ms
+                  </p>
+                  <p className="panel-note">
+                    MCP HTTP · {t("기록된 요청", "Recorded requests")}:{" "}
+                    {data.mcp.requests} · {t("HTTP 오류", "HTTP errors")}:{" "}
+                    {data.mcp.errors} · {t("평균 응답", "Mean latency")}:{" "}
+                    {number(data.mcp.latency_ms)} ms
+                  </p>
+                  <p className="panel-note">
                     {t("사용량 범위", "Usage scope")}: {data.usage_scope}
+                  </p>
+                  <p className="panel-note">
+                    {t(
+                      mcpStartLabel
+                        ? `MCP HTTP 기록은 ${mcpStartLabel}부터 시작되어 첫날은 부분 집계입니다. 이전 날짜는 알 수 없으며 되돌리기나 서비스 중단 기간에는 요청이 누락될 수 있습니다.`
+                        : "MCP HTTP 기록 시작 시각을 알 수 없어 일별 추이를 표시할 수 없습니다.",
+                      mcpStartLabel
+                        ? `MCP HTTP recording began at ${mcpStartLabel}; the first day is partial. Earlier days are unknown, and rollbacks or outages can leave undetectable gaps.`
+                        : "The MCP HTTP recording start is unknown, so daily history is unavailable.",
+                    )}
+                  </p>
+                  <p className="panel-note">
+                    {t(
+                      `이전의 일부 도구 호출 ${data.legacy_mcp_tool_calls}건은 HTTP 요청에서 제외됩니다. MCP 도구 오류도 HTTP 200으로 응답할 수 있습니다. 인증 실패 등을 포함해 사용자가 확인되지 않은 요청은 관리자 전체 범위에서만 볼 수 있습니다.`,
+                      `${data.legacy_mcp_tool_calls} earlier partial tool-call records are excluded from HTTP requests. MCP tool errors may return HTTP 200. Requests without a verified user, including authentication failures, appear only in the administrator's all-activity scope.`,
+                    )}
                   </p>
                 </section>
                 <section className="panel">
