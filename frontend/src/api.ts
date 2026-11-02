@@ -79,6 +79,7 @@ export type Job = {
   resolved_commit: string | null;
   content_hash: string | null;
   cached_from: string | null;
+  review?: { id: string; status: "pending" | "approved" | "rejected" } | null;
   result: {
     findings?: Finding[];
     engines?: Engine[];

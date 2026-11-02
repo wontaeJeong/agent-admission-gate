@@ -14,7 +14,15 @@ import {
   ShieldCheck,
   Upload,
 } from "lucide-react";
-import { api, number, send, timestamp, type Finding, type Job } from "../api";
+import {
+  APIError,
+  api,
+  number,
+  send,
+  timestamp,
+  type Finding,
+  type Job,
+} from "../api";
 import {
   Badge,
   Code,
@@ -411,6 +419,7 @@ export function JobDetail() {
     [params, setParams] = useSearchParams(),
     [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
+    [reviewError, setReviewError] = useState(""),
     [reason, setReason] = useState(""),
     [busy, setBusy] = useState(false),
     t = useText(),
@@ -422,11 +431,13 @@ export function JobDetail() {
   async function requestReview(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setReviewError("");
     try {
       const r = await send(`/scans/${id}/review`, { reason });
       navigate("/reviews/" + r.id);
     } catch (e) {
-      setError((e as Error).message);
+      setReviewError((e as Error).message);
+      if (e instanceof APIError && e.status === 409) setRefresh((x) => x + 1);
     } finally {
       setBusy(false);
     }
@@ -505,32 +516,67 @@ export function JobDetail() {
             {tab === "admission" && (
               <>
                 <Admission job={job} />
-                {job.owner_id === user.id && job.status === "COMPLETED" && (
-                  <section className="panel form-panel">
-                    <h2>{t("검토 요청", "Request review")}</h2>
+                {job.review && (
+                  <section
+                    className="panel form-panel"
+                    aria-labelledby="scan-review-title"
+                  >
+                    <h2 id="scan-review-title">
+                      {t("검토 요청", "Review request")}
+                    </h2>
+                    <p>
+                      <Badge value={job.review.status} />
+                    </p>
                     <p>
                       {t(
-                        "판정에 대한 설명이나 추가 근거를 검토자에게 전달합니다.",
-                        "Provide context and evidence for a reviewer.",
+                        "이 검사의 검토 요청과 결정 내용을 확인합니다.",
+                        "View this scan's review request and decision.",
                       )}
                     </p>
-                    <form onSubmit={requestReview}>
-                      <label>
-                        {t("요청 사유", "Reason")}
-                        <textarea
-                          value={reason}
-                          onChange={(e) => setReason(e.target.value)}
-                          minLength={5}
-                          maxLength={4000}
-                          required
-                        />
-                      </label>
-                      <button disabled={busy} className="primary">
-                        {t("검토 요청", "Request review")}
-                      </button>
-                    </form>
+                    <Link to={"/reviews/" + job.review.id}>
+                      {t("검토 상세 보기", "View review details")} ↗
+                    </Link>
                   </section>
                 )}
+                {job.owner_id === user.id &&
+                  job.status === "COMPLETED" &&
+                  job.review === undefined && (
+                    <p className="panel-note" role="status">
+                      {t(
+                        "검토 상태를 불러올 수 없습니다. 페이지를 새로고침해 주세요.",
+                        "Review status is unavailable. Reload the page to try again.",
+                      )}
+                    </p>
+                  )}
+                {job.owner_id === user.id &&
+                  job.status === "COMPLETED" &&
+                  job.review === null && (
+                    <section className="panel form-panel">
+                      <h2>{t("검토 요청", "Request review")}</h2>
+                      <p>
+                        {t(
+                          "판정에 대한 설명이나 추가 근거를 검토자에게 전달합니다.",
+                          "Provide context and evidence for a reviewer.",
+                        )}
+                      </p>
+                      <form onSubmit={requestReview}>
+                        <ErrorMessage value={reviewError} />
+                        <label>
+                          {t("요청 사유", "Reason")}
+                          <textarea
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            minLength={5}
+                            maxLength={4000}
+                            required
+                          />
+                        </label>
+                        <button disabled={busy} className="primary">
+                          {t("검토 요청", "Request review")}
+                        </button>
+                      </form>
+                    </section>
+                  )}
               </>
             )}
             {tab === "findings" && (
