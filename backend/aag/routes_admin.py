@@ -2,15 +2,15 @@ import csv
 import io
 import json
 import time
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, or_, select
 
 from .auth import Actor, actor
 from .db import audit, record
-from .models import APIKey, Audit, ExceptionRule, User
+from .models import APIKey, Audit, ExceptionRule, Usage, User
 from .policy import RULES
-from .routes_identity import key_rows
 from .schemas import ExceptionRequest, Reason, UserPatch
 
 router = APIRouter(prefix="/api/admin")
@@ -82,23 +82,284 @@ def update_user(user_id: str, data: UserPatch, request: Request, a: Actor = Depe
     return {"ok": True}
 
 
+def admin_key_record(key: APIKey, owner_name: str, now: float):
+    return {
+        **record(key, ("digest",)),
+        "display_key": "aag_sk_****" + key.suffix,
+        "issuer": owner_name,
+        "state": "revoked"
+        if key.revoked_at is not None
+        else "expired"
+        if key.expires_at <= now
+        else "active",
+    }
+
+
+def key_http_filter():
+    # Historical mcp:* entries are selected tool invocations, not HTTP requests.
+    return or_(
+        and_(Usage.kind == "api", or_(Usage.route.is_(None), ~Usage.route.like("mcp:%"))),
+        Usage.kind == "mcp_http",
+    )
+
+
+def key_event_unit():
+    return case(
+        (Usage.kind == "mcp_http", "mcp_http"),
+        (Usage.route.like("mcp:%"), "legacy_mcp_tool"),
+        else_="rest_http",
+    )
+
+
+def mcp_collection(s, now: float):
+    marker = s.get(Usage, "system:mcp-http-collection-start")
+    started = (
+        marker.created_at
+        if marker
+        and marker.kind == "mcp_http_start"
+        and marker.user_id is None
+        and marker.key_id is None
+        else None
+    )
+    coverage = (
+        "unknown"
+        if started is None or started > now
+        else "partial"
+        if started > now - 30 * 86400
+        else "possibly_partial"
+    )
+    return {"coverage": coverage, "collection_started_at": started}
+
+
 @router.get("/api-keys")
-def admin_keys(request: Request, a: Actor = Depends(actor)):
+def legacy_admin_keys(request: Request, response: Response, a: Actor = Depends(actor)):
     a.admin()
+    now = time.time()
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/admin/api-keys/search>; rel="successor-version"'
+    response.headers["X-AAG-Usage-Note"] = (
+        "Recorded HTTP requests only; MCP HTTP history may be incomplete"
+    )
     with request.app.state.db.session() as s:
-        return key_rows(s)
+        coverage = mcp_collection(s, now)
+        total = s.scalar(select(func.count()).select_from(APIKey))
+        rows = s.execute(
+            select(APIKey, User.name)
+            .join(User, APIKey.owner_id == User.id)
+            .order_by(APIKey.created_at.desc(), APIKey.id.desc())
+            .limit(500)
+        ).all()
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Result-Limit"] = "500"
+        response.headers["X-Results-Truncated"] = str(total > len(rows)).lower()
+        counts = {
+            key_id: (requests, days)
+            for key_id, requests, days in s.execute(
+                select(
+                    Usage.key_id,
+                    func.count(),
+                    func.count(func.distinct(func.floor(Usage.created_at / 86400))),
+                )
+                .where(
+                    Usage.key_id.in_([key.id for key, _ in rows]),
+                    key_http_filter(),
+                    Usage.created_at >= now - 30 * 86400,
+                    Usage.created_at <= now,
+                )
+                .group_by(Usage.key_id)
+            )
+        }
+        return [
+            {
+                **admin_key_record(key, owner, now),
+                "requests_30d": counts.get(key.id, (0, 0))[0],
+                "active_days_30d": counts.get(key.id, (0, 0))[1],
+                "mcp_http_coverage_30d": coverage,
+            }
+            for key, owner in rows
+        ]
+
+
+@router.get("/api-keys/search")
+def admin_keys(
+    request: Request,
+    page: int = Query(1, ge=1, le=1_000_000_000),
+    q: str = Query("", max_length=120),
+    state: Literal["all", "active", "expired", "revoked"] = "all",
+    a: Actor = Depends(actor),
+):
+    a.admin()
+    now, page_size = time.time(), 20
+    query = select(APIKey, User.name).join(User, APIKey.owner_id == User.id)
+    if q := q.strip():
+        query = query.where(
+            or_(
+                APIKey.name.icontains(q, autoescape=True),
+                APIKey.id.icontains(q, autoescape=True),
+                APIKey.suffix.icontains(q, autoescape=True),
+                User.name.icontains(q, autoescape=True),
+            )
+        )
+    if state == "revoked":
+        query = query.where(APIKey.revoked_at.is_not(None))
+    elif state == "expired":
+        query = query.where(APIKey.revoked_at.is_(None), APIKey.expires_at <= now)
+    elif state == "active":
+        query = query.where(APIKey.revoked_at.is_(None), APIKey.expires_at > now)
+    with request.app.state.db.session() as s:
+        total = s.scalar(select(func.count()).select_from(query.subquery()))
+        rows = s.execute(
+            query.order_by(APIKey.created_at.desc(), APIKey.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return {
+            "items": [admin_key_record(key, owner, now) for key, owner in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
+
+
+@router.get("/api-keys/{key_id}")
+def admin_key_detail(
+    key_id: str,
+    request: Request,
+    usage_page: int = Query(1, ge=1, le=1_000_000_000),
+    audit_page: int = Query(1, ge=1, le=1_000_000_000),
+    a: Actor = Depends(actor),
+):
+    a.admin()
+    now, page_size = time.time(), 20
+    with request.app.state.db.session() as s:
+        row = s.execute(
+            select(APIKey, User.name)
+            .join(User, APIKey.owner_id == User.id)
+            .where(APIKey.id == key_id)
+        ).first()
+        if not row:
+            raise HTTPException(404, "Key not found")
+        key, owner = row
+        unit = key_event_unit()
+        event_filter = (Usage.key_id == key_id, Usage.kind.in_(("api", "mcp_http")))
+        usage = select(Usage).where(*event_filter)
+        recent_filter = (
+            *event_filter,
+            Usage.created_at >= now - 30 * 86400,
+            Usage.created_at <= now,
+        )
+        totals = {
+            event_unit: {"count": count, "days": days, "errors": errors}
+            for event_unit, count, days, errors in s.execute(
+                select(
+                    unit,
+                    func.count(),
+                    func.count(func.distinct(func.floor(Usage.created_at / 86400))),
+                    func.coalesce(func.sum(case((Usage.status >= 400, 1), else_=0)), 0),
+                )
+                .where(*recent_filter)
+                .group_by(unit)
+            )
+        }
+        rest = totals.get("rest_http", {"count": 0, "days": 0, "errors": 0})
+        mcp = totals.get("mcp_http", {"count": 0, "days": 0, "errors": 0})
+        legacy = totals.get("legacy_mcp_tool", {"count": 0, "days": 0, "errors": 0})
+        coverage = mcp_collection(s, now)
+        routes = s.execute(
+            select(unit, Usage.route, func.count().label("count"))
+            .where(*recent_filter)
+            .group_by(unit, Usage.route)
+            .order_by(func.count().desc(), unit, Usage.route)
+        ).all()
+        usage_total = s.scalar(select(func.count()).select_from(usage.subquery()))
+        usage_rows = s.execute(
+            select(Usage, unit)
+            .where(*event_filter)
+            .order_by(Usage.created_at.desc(), Usage.id.desc())
+            .offset((usage_page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        audit_query = (
+            select(Audit, User.name)
+            .outerjoin(User, Audit.actor_id == User.id)
+            .where(
+                Audit.target_id == key_id,
+                Audit.action.in_(("key.create", "key.revoke", "key.admin_revoke")),
+            )
+        )
+        audit_total = s.scalar(select(func.count()).select_from(audit_query.subquery()))
+        audit_rows = s.execute(
+            audit_query.order_by(Audit.created_at.desc(), Audit.id.desc())
+            .offset((audit_page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        return {
+            "key": admin_key_record(key, owner, now),
+            "usage": {
+                "summary": {
+                    "rest_http": {
+                        "requests_30d": rest["count"],
+                        "active_days_30d": rest["days"],
+                        "errors_30d": rest["errors"],
+                    },
+                    "mcp_http": {
+                        "observed_requests_30d": mcp["count"],
+                        "active_days_30d": mcp["days"],
+                        "transport_errors_30d": mcp["errors"],
+                        **coverage,
+                    },
+                    "legacy_mcp_tool": {"events_30d": legacy["count"]},
+                    "routes_30d": [
+                        {"unit": event_unit, "route": route, "count": count}
+                        for event_unit, route, count in routes
+                    ],
+                },
+                "items": [
+                    {
+                        "id": u.id,
+                        "unit": event_unit,
+                        "created_at": u.created_at,
+                        "route": u.route,
+                        "status": u.status,
+                        "latency_ms": u.latency_ms,
+                    }
+                    for u, event_unit in usage_rows
+                ],
+                "total": usage_total,
+                "page": usage_page,
+                "page_size": page_size,
+            },
+            "audit": {
+                "items": [
+                    {
+                        "id": entry.id,
+                        "created_at": entry.created_at,
+                        "action": entry.action,
+                        "actor": actor_name,
+                        "reason": (entry.details or {}).get("reason"),
+                    }
+                    for entry, actor_name in audit_rows
+                ],
+                "total": audit_total,
+                "page": audit_page,
+                "page_size": page_size,
+            },
+        }
 
 
 @router.post("/api-keys/{key_id}/revoke")
 def revoke(key_id: str, data: Reason, request: Request, a: Actor = Depends(actor)):
     a.admin()
+    reason = data.reason.strip()
+    if len(reason) < 5:
+        raise HTTPException(422, "Revocation reason must contain at least 5 characters")
     with request.app.state.db.session.begin() as s:
         key = s.get(APIKey, key_id)
         if not key:
             raise HTTPException(404, "Key not found")
         if not key.revoked_at:
             key.revoked_at = time.time()
-            audit(s, a.id, "key.admin_revoke", key_id, reason=data.reason, owner_id=key.owner_id)
+            audit(s, a.id, "key.admin_revoke", key_id, reason=reason, owner_id=key.owner_id)
     return {"ok": True}
 
 

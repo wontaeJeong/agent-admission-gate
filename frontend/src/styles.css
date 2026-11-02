@@ -1768,3 +1768,31 @@ tbody tr:hover {
     scroll-behavior: auto !important;
   }
 }
+
+.admin-key-intro,
+.admin-key-note {
+  color: var(--color-ink-muted);
+  margin: 12px 0 16px;
+  font-size: 12px;
+}
+.admin-key-filters {
+  align-items: end;
+}
+.admin-key-filters label:first-child {
+  flex: 1;
+  min-width: 200px;
+}
+.admin-key-back {
+  margin-bottom: 16px;
+}
+.admin-key-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 600px) {
+  .admin-key-stats {
+    grid-template-columns: 1fr;
+  }
+  .key-card header {
+    flex-wrap: wrap;
+  }
+}

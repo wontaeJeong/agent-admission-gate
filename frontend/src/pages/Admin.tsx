@@ -13,7 +13,7 @@ import {
   useLoad,
 } from "../components";
 import { useApp, useText } from "../context";
-import { Keys } from "./Integrations";
+import { AdminKeys } from "./AdminKeys";
 export function Admin() {
   const { user } = useApp(),
     t = useText(),
@@ -49,7 +49,7 @@ export function Admin() {
         ]}
       />
       {tab === "keys" ? (
-        <Keys admin />
+        <AdminKeys />
       ) : tab === "users" ? (
         <Users />
       ) : tab === "allowlist" ? (
