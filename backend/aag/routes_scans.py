@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from .auth import Actor, actor
 from .db import audit, record
+from .job_query import job_scope_filters, utc_window_start
 from .models import Comment, Job, Review, User
 from .schemas import CommentRequest, Reason, ReviewDecision, ScanRequest
 from .service import TERMINAL, owned_job
@@ -75,12 +76,26 @@ def list_scans(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     mine: bool = False,
+    scope: Literal["personal", "review", "all"] | None = None,
+    days: int | None = None,
     a: Actor = Depends(actor),
 ):
     a.scope("scan:read")
+    if scope == "review":
+        a.review()
+    if scope == "all":
+        a.interactive()
+        if not a.staff:
+            raise HTTPException(403, "Staff required")
+    if days is not None and days not in {7, 14, 30, 90}:
+        raise HTTPException(422, "Days must be 7, 14, 30 or 90")
     query = select(Job)
+    if scope:
+        query = query.where(*job_scope_filters(a, scope))
     if mine or a.key_id or not a.staff:
         query = query.where(Job.owner_id == a.id)
+    if days is not None:
+        query = query.where(Job.created_at >= utc_window_start(days))
     if q:
         query = query.where(Job.source.contains(q, autoescape=True))
     if status:

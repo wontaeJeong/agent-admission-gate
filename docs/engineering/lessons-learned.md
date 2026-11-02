@@ -66,3 +66,18 @@
 - Failure: the frontend formatting check picked up an unformatted temporary Playwright configuration and failed; a subsequent forced-remove command was rejected by the command policy.
 - Cause and resolution: the temporary file matched the check's `*.ts` glob. It was removed by its exact path without force, after which the formatting check passed.
 - Prevention: remove temporary configuration files before repository-wide format checks and use a specific non-forced removal command.
+
+### Scan scope regression verification (2026-11-02)
+
+- Failure: an authorization test initially assumed the bootstrap administrator was not reviewer-qualified, but the fixture creates that administrator with the reviewer flag enabled. The test now explicitly removes the qualification and checks the administrator and API-key boundaries separately.
+- Prevention: inspect fixture roles and permissions before asserting role-specific behavior, and use concise test tracebacks so fixture data such as temporary test tokens is not printed.
+- Failure: the first browser assertion ran after the URL changed but before the lazy-loaded scans screen replaced the dashboard, and an initial mobile screenshot captured the sidebar mid-transition. The test now waits for the scans heading and the sidebar's final position before taking screenshots.
+- Prevention: wait for the destination UI and completed responsive transitions, not only the navigation URL, before inspecting controls or capturing screenshots.
+- Failure: a file-creation command used a repository-relative prefix while already in the frontend directory. It was rerun from the repository root with the correct paths.
+- Prevention: check the command's working directory before constructing relative output paths.
+
+### Review branch refresh (2026-11-02)
+
+- Failure: a connector upload helper assumed that temporary orchestration metadata from an earlier task was still available after the handoff.
+- Resolution: reconstruct the file list and object hashes from the committed Git tree before uploading.
+- Prevention: derive handoff state from durable repository objects rather than in-memory tool state.

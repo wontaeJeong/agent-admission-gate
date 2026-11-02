@@ -31,7 +31,8 @@ export function Dashboard() {
     ),
     [tab, setTab] = useState("attention");
   const load = useLoad(`/metrics?days=${days}&scope=${scope}`),
-    data = load.data;
+    data = load.data,
+    scanParams = new URLSearchParams({ scope, days: String(days) });
   return (
     <>
       <PageTitle
@@ -277,7 +278,7 @@ export function Dashboard() {
                   </div>
                   <ArrowUpRight size={18} />
                 </Link>
-                <Link to="/jobs?status=FAILED">
+                <Link to={`/jobs?${scanParams}&status=FAILED`}>
                   <span className="attention-icon neutral">
                     <Activity size={20} />
                   </span>
@@ -301,7 +302,9 @@ export function Dashboard() {
               <section className="panel recent">
                 <div className="panel-heading">
                   <h2>{t("최근 검사", "Recent scans")}</h2>
-                  <Link to="/jobs">{t("전체 보기", "View all")} ↗</Link>
+                  <Link to={`/jobs?${scanParams}`}>
+                    {t("전체 보기", "View all")} ↗
+                  </Link>
                 </div>
                 {data.recent.length ? (
                   <div className="table-scroll">

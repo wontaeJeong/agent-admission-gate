@@ -40,11 +40,18 @@ import { useApp, useText } from "../context";
 export function Jobs() {
   const [params, setParams] = useSearchParams(),
     t = useText(),
+    { user } = useApp(),
+    staff = user.role === "admin" || user.reviewer,
+    scope =
+      params.get("scope") ||
+      (params.get("mine") === "true" || !staff ? "personal" : "all"),
     page = Number(params.get("page") || 1);
   const load = useLoad(`/scans?${params}`, 0, 5000);
   const change = (key: string, value: string) => {
     const next = new URLSearchParams(params);
-    next.set(key, value);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    if (key === "scope") next.delete("mine");
     if (key !== "page") next.set("page", "1");
     setParams(next);
   };
@@ -64,6 +71,40 @@ export function Jobs() {
         }
       />
       <div className="filters">
+        <select
+          aria-label={t("조회 범위", "Scope")}
+          value={scope}
+          onChange={(e) => change("scope", e.target.value)}
+        >
+          <option value="personal">{t("내 검사", "My scans")}</option>
+          {(user.reviewer || scope === "review") && (
+            <option value="review" disabled={!user.reviewer}>
+              {t("검토 요청 검사", "Scans with review requests")}
+            </option>
+          )}
+          {(staff || scope === "all") && (
+            <option value="all" disabled={!staff}>
+              {t("전체 검사", "All scans")}
+            </option>
+          )}
+          {!["personal", "review", "all"].includes(scope) && (
+            <option value={scope} disabled>
+              {t("사용할 수 없는 범위", "Unavailable scope")}
+            </option>
+          )}
+        </select>
+        <select
+          aria-label={t("조회 기간", "Date range")}
+          value={params.get("days") || ""}
+          onChange={(e) => change("days", e.target.value)}
+        >
+          <option value="">{t("전체 기간", "All time")}</option>
+          {[7, 14, 30, 90].map((days) => (
+            <option key={days} value={days}>
+              {t(`최근 ${days}일`, `Last ${days} days`)} · UTC
+            </option>
+          ))}
+        </select>
         <label className="search">
           <Search size={17} />
           <input
@@ -98,14 +139,16 @@ export function Jobs() {
             <option key={v}>{v}</option>
           ))}
         </select>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={params.get("mine") === "true"}
-            onChange={(e) => change("mine", String(e.target.checked))}
-          />
-          {t("내 검사만", "My scans")}
-        </label>
+        {params.get("mine") === "true" && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked
+              onChange={() => change("mine", "")}
+            />
+            {t("내 검사만", "My scans only")}
+          </label>
+        )}
       </div>
       <State {...load}>
         {load.data && (
