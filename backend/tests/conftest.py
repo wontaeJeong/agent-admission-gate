@@ -17,6 +17,7 @@ def app(tmp_path):
         bootstrap_password="test-password-long",
         public_url="http://localhost:8000",
         boards_enabled=True,
+        api_keys_enabled=True,
     )
     return create_app(settings)
 

@@ -23,6 +23,8 @@ uv run uvicorn aag.main:app --host 127.0.0.1 --port 8000 --no-access-log
 
 <http://localhost:8000>에서 `admin`과 설정한 비밀번호로 로그인합니다. 기존 계정의 비밀번호는 재시작으로 변경되지 않습니다. 다른 로컬 사용자는 `uv run aag create-local-user USERNAME`으로 생성합니다. SSO 운영 환경은 [배포 가이드](docs/src/content/docs/operations/deployment.md)를 따릅니다.
 
+API 키와 Device Code 발급은 기본 비활성입니다. 로컬 개발에 필요하면 `AAG_API_KEYS_ENABLED=true`를 명시합니다. OIDC 환경에서 키를 사용하려면 별도로 Keycloak 및 상위 디렉터리의 계정·그룹 확인 연동을 구성하고 검증해야 합니다. 이 연동을 켜기 전 대화형 세션은 기존 로컬 권한을 따르므로 상위 계정이나 그룹 변경이 즉시 반영되지 않습니다.
+
 Docker Compose에는 PostgreSQL 18.1이 포함됩니다. 아래 두 환경변수를 직접 설정한 후 실행하세요. 개발용 Compose만 스키마를 자동 생성합니다.
 
 ```bash

@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     oidc_admin_subjects: list[str] = []
     oidc_client_id: str = "agent-admission-gate"
     oidc_client_secret: SecretStr = SecretStr("")
+    # Operators must independently verify upstream-to-Keycloak synchronization before enabling it.
+    oidc_lifecycle_sync_confirmed: bool = False
+    oidc_lifecycle_client_id: str = ""
+    oidc_lifecycle_client_secret: SecretStr = SecretStr("")
+    oidc_lifecycle_ca_bundle: str = ""
+    oidc_upstream_verifier_url: str = ""
+    oidc_upstream_verifier_secret: SecretStr = SecretStr("")
+    oidc_access_group_id: str = ""
+    oidc_admin_group_id: str = ""
+    oidc_reviewer_group_id: str = ""
+    api_keys_enabled: bool = False
     cookie_secure: bool = False
     allowed_git_hosts: list[str] = ["github.com"]
     boards_enabled: bool = False

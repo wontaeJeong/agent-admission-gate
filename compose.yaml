@@ -10,6 +10,7 @@ services:
       AAG_DATABASE_URL: postgresql+psycopg://aag:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db/aag
       AAG_BOOTSTRAP_PASSWORD: ${AAG_BOOTSTRAP_PASSWORD:?Set a strong AAG_BOOTSTRAP_PASSWORD}
       AAG_BOARDS_ENABLED: ${AAG_BOARDS_ENABLED:-false}
+      AAG_API_KEYS_ENABLED: ${AAG_API_KEYS_ENABLED:-false}
     volumes: ["gate-data:/app/data"]
     depends_on:
       db: {condition: service_healthy}

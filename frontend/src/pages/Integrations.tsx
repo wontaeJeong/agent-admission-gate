@@ -11,9 +11,30 @@ import {
   useLoad,
 } from "../components";
 import { api, send, timestamp } from "../api";
-import { useText } from "../context";
+import { useApp, useText } from "../context";
+
+function KeysUnavailable() {
+  const { apiKeysState } = useApp(),
+    t = useText();
+  if (apiKeysState === "available") return null;
+  return (
+    <div className="notice" role="status">
+      {apiKeysState === "identity_unconfigured"
+        ? t(
+            "SSO 계정·그룹 확인이 구성되지 않아 API 키와 도구 연결이 차단되었습니다.",
+            "API keys and tool connections are blocked because SSO account and group checks are not configured.",
+          )
+        : t(
+            "API 키와 도구 연결이 비활성화되어 있습니다.",
+            "API keys and tool connections are disabled.",
+          )}{" "}
+      {t("관리자에게 문의하세요.", "Contact your administrator.")}
+    </div>
+  );
+}
 
 export function Keys({ admin = false }: { admin?: boolean }) {
+  const { apiKeysState } = useApp();
   const [refresh, setRefresh] = useState(0),
     [token, setToken] = useState(""),
     [error, setError] = useState(""),
@@ -73,6 +94,7 @@ export function Keys({ admin = false }: { admin?: boolean }) {
         />
       )}
       <ErrorMessage value={error} />
+      {!admin && <KeysUnavailable />}
       {token && (
         <section className="one-time" role="status">
           <h2>{t("키가 발급되었습니다", "Your key is ready")}</h2>
@@ -102,11 +124,12 @@ export function Keys({ admin = false }: { admin?: boolean }) {
                 placeholder="Claude Code / CI"
                 maxLength={100}
                 required
+                disabled={apiKeysState !== "available"}
               />
             </label>
             <label>
               {t("만료", "Expires in")}
-              <select name="days">
+              <select name="days" disabled={apiKeysState !== "available"}>
                 <option value="90">90 {t("일", "days")}</option>
                 <option value="30">30 {t("일", "days")}</option>
                 <option value="7">7 {t("일", "days")}</option>
@@ -114,12 +137,15 @@ export function Keys({ admin = false }: { admin?: boolean }) {
             </label>
             <label>
               {t("권한", "Scope")}
-              <select name="scope">
+              <select name="scope" disabled={apiKeysState !== "available"}>
                 <option value="write">scan:read + scan:write</option>
                 <option value="read">scan:read</option>
               </select>
             </label>
-            <button className="primary" disabled={busy}>
+            <button
+              className="primary"
+              disabled={busy || apiKeysState !== "available"}
+            >
               {t("발급", "Create key")}
             </button>
           </form>
@@ -227,6 +253,7 @@ export function Keys({ admin = false }: { admin?: boolean }) {
   );
 }
 export function Devices() {
+  const { apiKeysState } = useApp();
   const [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
     [code, setCode] = useState(""),
@@ -294,6 +321,7 @@ export function Devices() {
         )}
       />
       <ErrorMessage value={error} />
+      <KeysUnavailable />
       {message && (
         <div className="notice" role="status">
           {message}
@@ -321,9 +349,10 @@ export function Devices() {
                 required
                 maxLength={8}
                 placeholder="ABCD2345"
+                disabled={apiKeysState !== "available"}
               />
             </label>
-            <button disabled={busy}>
+            <button disabled={busy || apiKeysState !== "available"}>
               {t("연결 정보 확인", "Check connection")}
             </button>
           </form>
@@ -343,12 +372,15 @@ export function Devices() {
                 )}
               </p>
               <div className="toolbar">
-                <button disabled={busy} onClick={() => decide(false)}>
+                <button
+                  disabled={busy || apiKeysState !== "available"}
+                  onClick={() => decide(false)}
+                >
                   {t("거부", "Deny")}
                 </button>
                 <button
                   className="primary"
-                  disabled={busy}
+                  disabled={busy || apiKeysState !== "available"}
                   onClick={() => decide(true)}
                 >
                   {t("연결 승인", "Approve connection")}
@@ -367,9 +399,12 @@ export function Devices() {
                 maxLength={100}
                 placeholder="My coding agent"
                 required
+                disabled={apiKeysState !== "available"}
               />
             </label>
-            <button className="primary">{t("등록", "Register")}</button>
+            <button className="primary" disabled={apiKeysState !== "available"}>
+              {t("등록", "Register")}
+            </button>
           </form>
           <p className="muted">
             {t(

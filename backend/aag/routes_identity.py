@@ -11,8 +11,19 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select, update
 
-from .auth import Actor, actor, digest, issue_key, issue_session, password_matches
+from .auth import (
+    Actor,
+    actor,
+    api_keys_state,
+    digest,
+    ensure_user_current,
+    issue_key,
+    issue_session,
+    password_matches,
+    require_api_keys,
+)
 from .db import audit, record
+from .identity_lifecycle import assert_identity_epoch, check_identity, identity_epoch
 from .models import APIKey, DeviceClient, DeviceGrant, OIDCState, Session, Usage, User
 from .schemas import (
     DeviceAuthorize,
@@ -28,6 +39,22 @@ from .usage import http_request_filter
 router = APIRouter(prefix="/api")
 
 
+def assert_actor_current(s, request, a):
+    db = request.app.state.db
+    assert_identity_epoch(db, a.identity_subject, a.identity_epoch)
+    user = s.get(User, a.id)
+    session = s.get(Session, digest(request.cookies.get("aag_session", "")))
+    if (
+        not user
+        or not user.active
+        or user.subject != a.identity_subject
+        or not session
+        or session.user_id != a.id
+        or session.expires_at <= time.time()
+    ):
+        raise HTTPException(401, "Account unavailable")
+
+
 def limit(request, category, count=20):
     ip = request.client.host if request.client else "unknown"
     request.app.state.limiter.check((category, ip), count)
@@ -40,6 +67,7 @@ def auth_config(request: Request):
         "mode": settings.auth_mode,
         "boards_enabled": settings.boards_enabled,
         "environment": settings.environment,
+        "api_keys_state": api_keys_state(settings),
     }
 
 
@@ -191,8 +219,16 @@ async def oidc_callback(request, code, state):
             raise ValueError("Invalid nonce or authorized party")
     except Exception as e:
         raise HTTPException(401, "Invalid identity token") from e
-    with request.app.state.db.session.begin() as s:
-        subject = settings.oidc_issuer + "|" + claims["sub"]
+    subject = settings.oidc_issuer + "|" + claims["sub"]
+    db = request.app.state.db
+    epoch = identity_epoch(db, subject) if settings.oidc_lifecycle_sync_confirmed else None
+    with request.app.state.db.session() as s:
+        existing = s.scalar(select(User).where(User.subject == subject))
+        user_id = existing.id if existing else None
+    if settings.oidc_lifecycle_sync_confirmed:
+        await asyncio.to_thread(check_identity, request.app.state.db, settings, subject, user_id)
+    with db.lifecycle_lock, db.session.begin() as s:
+        assert_identity_epoch(db, subject, epoch)
         user = s.scalar(select(User).where(User.subject == subject))
         if not user:
             user = User(
@@ -251,7 +287,10 @@ def keys(request: Request, a: Actor = Depends(actor)):
 @router.post("/api-keys", status_code=201)
 def create_key(data: KeyRequest, request: Request, a: Actor = Depends(actor)):
     a.interactive()
-    with request.app.state.db.session.begin() as s:
+    require_api_keys(request.app.state.settings)
+    db = request.app.state.db
+    with db.lifecycle_lock, db.session.begin() as s:
+        assert_actor_current(s, request, a)
         key, token = issue_key(s, a.id, data.name, data.days, data.scopes)
         return {**record(key, ("digest",)), "token": token}
 
@@ -286,7 +325,10 @@ def clients(request: Request, a: Actor = Depends(actor)):
 @router.post("/device-clients", status_code=201)
 def create_client(data: NameRequest, request: Request, a: Actor = Depends(actor)):
     a.interactive()
-    with request.app.state.db.session.begin() as s:
+    require_api_keys(request.app.state.settings)
+    db = request.app.state.db
+    with db.lifecycle_lock, db.session.begin() as s:
+        assert_actor_current(s, request, a)
         client = DeviceClient(owner_id=a.id, name=data.name)
         s.add(client)
         s.flush()
@@ -315,11 +357,27 @@ def disable_client(client_id: str, request: Request, a: Actor = Depends(actor)):
 
 @router.post("/device/authorize")
 def authorize_device(data: DeviceAuthorize, request: Request):
+    require_api_keys(request.app.state.settings)
     limit(request, "device-start", 15)
     code = secrets.token_urlsafe(40)
-    with request.app.state.db.session.begin() as s:
+    with request.app.state.db.session() as s:
         client = s.get(DeviceClient, data.client_id)
         if not client or not client.active:
+            raise HTTPException(400, "Unknown client")
+        owner_id = client.owner_id
+    db = request.app.state.db
+    owner_identity = ensure_user_current(db, request.app.state.settings, owner_id)
+    with db.lifecycle_lock, db.session.begin() as s:
+        assert_identity_epoch(db, *owner_identity)
+        client = s.get(DeviceClient, data.client_id)
+        owner = s.get(User, owner_id)
+        if (
+            not client
+            or not client.active
+            or client.owner_id != owner_id
+            or not owner
+            or not owner.active
+        ):
             raise HTTPException(400, "Unknown client")
         grant = DeviceGrant(
             digest=digest(code),
@@ -342,6 +400,7 @@ def authorize_device(data: DeviceAuthorize, request: Request):
 @router.get("/device/verify/{user_code}")
 def verify_device(user_code: str, request: Request, a: Actor = Depends(actor)):
     a.interactive()
+    require_api_keys(request.app.state.settings)
     limit(request, "device-verify", 10)
     with request.app.state.db.session() as s:
         grant = s.scalar(
@@ -366,8 +425,22 @@ def verify_device(user_code: str, request: Request, a: Actor = Depends(actor)):
 @router.post("/device/decision")
 def decide_device(data: DeviceDecision, request: Request, a: Actor = Depends(actor)):
     a.interactive()
+    require_api_keys(request.app.state.settings)
     limit(request, "device-decision", 10)
-    with request.app.state.db.session.begin() as s:
+    with request.app.state.db.session() as s:
+        grant = s.scalar(select(DeviceGrant).where(DeviceGrant.user_code == data.user_code))
+        client = s.get(DeviceClient, grant.client_id) if grant else None
+        if not client or not client.active:
+            raise HTTPException(409, "Code expired or already used")
+        owner_id = client.owner_id
+    db = request.app.state.db
+    owner_identity = ensure_user_current(db, request.app.state.settings, owner_id)
+    with db.lifecycle_lock, db.session.begin() as s:
+        assert_identity_epoch(db, *owner_identity)
+        assert_actor_current(s, request, a)
+        current_client = s.get(DeviceClient, client.id)
+        if not current_client or not current_client.active or current_client.owner_id != owner_id:
+            raise HTTPException(409, "Code expired or already used")
         changed = s.execute(
             update(DeviceGrant)
             .where(
@@ -385,11 +458,30 @@ def decide_device(data: DeviceDecision, request: Request, a: Actor = Depends(act
 
 @router.post("/device/token")
 def poll_device(data: DevicePoll, request: Request):
+    require_api_keys(request.app.state.settings)
     limit(request, "device-poll", 60)
     now = time.time()
     error = None
-    with request.app.state.db.session.begin() as s:
-        grant = s.get(DeviceGrant, digest(data.device_code.get_secret_value()))
+    grant_digest = digest(data.device_code.get_secret_value())
+    with request.app.state.db.session() as s:
+        grant = s.get(DeviceGrant, grant_digest)
+        if not grant or grant.client_id != data.client_id or grant.expires_at <= now:
+            return Response('{"error":"expired_token"}', 400, media_type="application/json")
+        client = s.get(DeviceClient, grant.client_id)
+        if not client or not client.active:
+            return Response('{"error":"access_denied"}', 400, media_type="application/json")
+        owner_id = client.owner_id
+        approved_user_id = grant.user_id if grant.status == "approved" else None
+    db = request.app.state.db
+    owner_identity = ensure_user_current(db, request.app.state.settings, owner_id)
+    approved_identity = owner_identity
+    if approved_user_id and approved_user_id != owner_id:
+        approved_identity = ensure_user_current(db, request.app.state.settings, approved_user_id)
+    with db.lifecycle_lock, db.session.begin() as s:
+        assert_identity_epoch(db, *owner_identity)
+        assert_identity_epoch(db, *approved_identity)
+        now = time.time()
+        grant = s.get(DeviceGrant, grant_digest)
         if not grant or grant.client_id != data.client_id or grant.expires_at <= now:
             return Response('{"error":"expired_token"}', 400, media_type="application/json")
         if now - grant.last_poll_at < 5:
@@ -403,12 +495,28 @@ def poll_device(data: DevicePoll, request: Request):
             else:
                 client = s.get(DeviceClient, grant.client_id)
                 user = s.get(User, grant.user_id)
-                if not client.active or not user or not user.active:
+                owner = s.get(User, owner_id)
+                if (
+                    not client
+                    or not client.active
+                    or client.owner_id != owner_id
+                    or not owner
+                    or not owner.active
+                    or not user
+                    or not user.active
+                    or user.id != approved_user_id
+                ):
                     error = "access_denied"
                 else:
                     changed = s.execute(
                         update(DeviceGrant)
-                        .where(DeviceGrant.digest == grant.digest, DeviceGrant.status == "approved")
+                        .where(
+                            DeviceGrant.digest == grant.digest,
+                            DeviceGrant.client_id == data.client_id,
+                            DeviceGrant.user_id == approved_user_id,
+                            DeviceGrant.status == "approved",
+                            DeviceGrant.expires_at > time.time(),
+                        )
                         .values(status="consumed")
                     ).rowcount
                     if changed != 1:

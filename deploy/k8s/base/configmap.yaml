@@ -11,6 +11,9 @@ data:
   AAG_PUBLIC_URL: https://admission-stg.example.com
   AAG_OIDC_ISSUER: https://identity.example.com/realms/workspace
   AAG_OIDC_CLIENT_ID: agent-admission-gate
+  # Configure the lifecycle reader, upstream verifier, and group IDs after live validation.
+  AAG_OIDC_LIFECYCLE_SYNC_CONFIRMED: "false"
+  AAG_API_KEYS_ENABLED: "false"
   AAG_ALLOWED_GIT_HOSTS: '["github.com"]'
   AAG_BOARDS_ENABLED: "false"
   AAG_RUNNER_CONCURRENCY: "2"
