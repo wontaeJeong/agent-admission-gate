@@ -5,7 +5,7 @@ import time
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 
 from .auth import Actor, actor
 from .db import audit, record
@@ -95,7 +95,92 @@ def admin_key_record(key: APIKey, owner_name: str, now: float):
     }
 
 
+def key_http_filter():
+    # Historical mcp:* entries are selected tool invocations, not HTTP requests.
+    return or_(
+        and_(Usage.kind == "api", or_(Usage.route.is_(None), ~Usage.route.like("mcp:%"))),
+        Usage.kind == "mcp_http",
+    )
+
+
+def key_event_unit():
+    return case(
+        (Usage.kind == "mcp_http", "mcp_http"),
+        (Usage.route.like("mcp:%"), "legacy_mcp_tool"),
+        else_="rest_http",
+    )
+
+
+def mcp_collection(s, now: float):
+    marker = s.get(Usage, "system:mcp-http-collection-start")
+    started = (
+        marker.created_at
+        if marker
+        and marker.kind == "mcp_http_start"
+        and marker.user_id is None
+        and marker.key_id is None
+        else None
+    )
+    coverage = (
+        "unknown"
+        if started is None or started > now
+        else "partial"
+        if started > now - 30 * 86400
+        else "possibly_partial"
+    )
+    return {"coverage": coverage, "collection_started_at": started}
+
+
 @router.get("/api-keys")
+def legacy_admin_keys(request: Request, response: Response, a: Actor = Depends(actor)):
+    a.admin()
+    now = time.time()
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/admin/api-keys/search>; rel="successor-version"'
+    response.headers["X-AAG-Usage-Note"] = (
+        "Recorded HTTP requests only; MCP HTTP history may be incomplete"
+    )
+    with request.app.state.db.session() as s:
+        coverage = mcp_collection(s, now)
+        total = s.scalar(select(func.count()).select_from(APIKey))
+        rows = s.execute(
+            select(APIKey, User.name)
+            .join(User, APIKey.owner_id == User.id)
+            .order_by(APIKey.created_at.desc(), APIKey.id.desc())
+            .limit(500)
+        ).all()
+        response.headers["X-Total-Count"] = str(total)
+        response.headers["X-Result-Limit"] = "500"
+        response.headers["X-Results-Truncated"] = str(total > len(rows)).lower()
+        counts = {
+            key_id: (requests, days)
+            for key_id, requests, days in s.execute(
+                select(
+                    Usage.key_id,
+                    func.count(),
+                    func.count(func.distinct(func.floor(Usage.created_at / 86400))),
+                )
+                .where(
+                    Usage.key_id.in_([key.id for key, _ in rows]),
+                    key_http_filter(),
+                    Usage.created_at >= now - 30 * 86400,
+                    Usage.created_at <= now,
+                )
+                .group_by(Usage.key_id)
+            )
+        }
+        return [
+            {
+                **admin_key_record(key, owner, now),
+                "requests_30d": counts.get(key.id, (0, 0))[0],
+                "active_days_30d": counts.get(key.id, (0, 0))[1],
+                "mcp_http_coverage_30d": coverage,
+            }
+            for key, owner in rows
+        ]
+
+
+@router.get("/api-keys/search")
 def admin_keys(
     request: Request,
     page: int = Query(1, ge=1, le=1_000_000_000),
@@ -155,29 +240,42 @@ def admin_key_detail(
         if not row:
             raise HTTPException(404, "Key not found")
         key, owner = row
-        usage = select(Usage).where(Usage.key_id == key_id, Usage.kind == "api")
+        unit = key_event_unit()
+        event_filter = (Usage.key_id == key_id, Usage.kind.in_(("api", "mcp_http")))
+        usage = select(Usage).where(*event_filter)
         recent_filter = (
-            Usage.key_id == key_id,
-            Usage.kind == "api",
+            *event_filter,
             Usage.created_at >= now - 30 * 86400,
             Usage.created_at <= now,
         )
-        requests, days, failures = s.execute(
-            select(
-                func.count(),
-                func.count(func.distinct(func.floor(Usage.created_at / 86400))),
-                func.coalesce(func.sum(case((Usage.status >= 400, 1), else_=0)), 0),
-            ).where(*recent_filter)
-        ).one()
+        totals = {
+            event_unit: {"count": count, "days": days, "errors": errors}
+            for event_unit, count, days, errors in s.execute(
+                select(
+                    unit,
+                    func.count(),
+                    func.count(func.distinct(func.floor(Usage.created_at / 86400))),
+                    func.coalesce(func.sum(case((Usage.status >= 400, 1), else_=0)), 0),
+                )
+                .where(*recent_filter)
+                .group_by(unit)
+            )
+        }
+        rest = totals.get("rest_http", {"count": 0, "days": 0, "errors": 0})
+        mcp = totals.get("mcp_http", {"count": 0, "days": 0, "errors": 0})
+        legacy = totals.get("legacy_mcp_tool", {"count": 0, "days": 0, "errors": 0})
+        coverage = mcp_collection(s, now)
         routes = s.execute(
-            select(Usage.route, func.count().label("count"))
+            select(unit, Usage.route, func.count().label("count"))
             .where(*recent_filter)
-            .group_by(Usage.route)
-            .order_by(func.count().desc(), Usage.route)
+            .group_by(unit, Usage.route)
+            .order_by(func.count().desc(), unit, Usage.route)
         ).all()
         usage_total = s.scalar(select(func.count()).select_from(usage.subquery()))
-        usage_rows = s.scalars(
-            usage.order_by(Usage.created_at.desc(), Usage.id.desc())
+        usage_rows = s.execute(
+            select(Usage, unit)
+            .where(*event_filter)
+            .order_by(Usage.created_at.desc(), Usage.id.desc())
             .offset((usage_page - 1) * page_size)
             .limit(page_size)
         ).all()
@@ -199,20 +297,33 @@ def admin_key_detail(
             "key": admin_key_record(key, owner, now),
             "usage": {
                 "summary": {
-                    "requests_30d": requests,
-                    "active_days_30d": days,
-                    "failures_30d": failures,
-                    "routes_30d": [{"route": route, "count": count} for route, count in routes],
+                    "rest_http": {
+                        "requests_30d": rest["count"],
+                        "active_days_30d": rest["days"],
+                        "errors_30d": rest["errors"],
+                    },
+                    "mcp_http": {
+                        "observed_requests_30d": mcp["count"],
+                        "active_days_30d": mcp["days"],
+                        "transport_errors_30d": mcp["errors"],
+                        **coverage,
+                    },
+                    "legacy_mcp_tool": {"events_30d": legacy["count"]},
+                    "routes_30d": [
+                        {"unit": event_unit, "route": route, "count": count}
+                        for event_unit, route, count in routes
+                    ],
                 },
                 "items": [
                     {
                         "id": u.id,
+                        "unit": event_unit,
                         "created_at": u.created_at,
                         "route": u.route,
                         "status": u.status,
                         "latency_ms": u.latency_ms,
                     }
-                    for u in usage_rows
+                    for u, event_unit in usage_rows
                 ],
                 "total": usage_total,
                 "page": usage_page,

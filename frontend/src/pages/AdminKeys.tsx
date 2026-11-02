@@ -23,8 +23,10 @@ type Key = {
   revoked_at: number | null;
 };
 type Page<T> = { items: T[]; total: number; page_size: number };
+type EventUnit = "rest_http" | "mcp_http" | "legacy_mcp_tool";
 type Call = {
   id: string;
+  unit: EventUnit;
   created_at: number;
   route: string | null;
   status: number;
@@ -41,10 +43,20 @@ type KeyDetail = {
   key: Key;
   usage: Page<Call> & {
     summary: {
-      requests_30d: number;
-      active_days_30d: number;
-      failures_30d: number;
-      routes_30d: { route: string | null; count: number }[];
+      rest_http: {
+        requests_30d: number;
+        active_days_30d: number;
+        errors_30d: number;
+      };
+      mcp_http: {
+        observed_requests_30d: number;
+        active_days_30d: number;
+        transport_errors_30d: number;
+        coverage: "unknown" | "partial" | "possibly_partial";
+        collection_started_at: number | null;
+      };
+      legacy_mcp_tool: { events_30d: number };
+      routes_30d: { unit: EventUnit; route: string | null; count: number }[];
     };
   };
   audit: Page<AuditEntry>;
@@ -63,7 +75,10 @@ export function AdminKeys() {
     state: query.state,
     page: String(page),
   });
-  const load = useLoad<Page<Key>>(`/admin/api-keys?${params}`, listVersion);
+  const load = useLoad<Page<Key>>(
+    `/admin/api-keys/search?${params}`,
+    listVersion,
+  );
   useEffect(() => {
     if (
       load.data &&
@@ -234,6 +249,12 @@ function AdminKeyDetail({ id, onBack }: { id: string; onBack: () => void }) {
     }
   }
   const detail = load.data;
+  const unitLabel = (unit: EventUnit) =>
+    unit === "rest_http"
+      ? "REST HTTP"
+      : unit === "mcp_http"
+        ? "MCP HTTP"
+        : t("이전 MCP 도구 이벤트", "Legacy MCP tool event");
   return (
     <>
       <button className="admin-key-back" onClick={onBack}>
@@ -349,27 +370,84 @@ function AdminKeyDetail({ id, onBack }: { id: string; onBack: () => void }) {
               </h2>
               <p className="admin-key-note">
                 {t(
-                  "이 키에 연결해 기록된 REST 및 MCP 호출입니다. 인증에 실패한 시도는 이 키에 연결되지 않습니다. 사용 일수는 UTC 기준입니다.",
-                  "Recorded REST and MCP calls attributed to this key. Authentication failures are not attributed to a key. Active days use UTC.",
+                  "REST HTTP 요청, MCP HTTP 요청, 과거 MCP 도구 이벤트는 서로 다른 단위입니다. 인증 실패는 키에 연결되지 않습니다. MCP HTTP 상태는 전송 결과이며 도구 성공 여부가 아닙니다. 과거 도구 이벤트는 일부 도구만 포함합니다. 사용 일수는 UTC 기준입니다.",
+                  "REST HTTP requests, MCP HTTP requests, and legacy MCP tool events are separate units. Authentication failures are not attributed to a key. MCP HTTP status describes transport, not tool success. Legacy tool events cover selected tools only. Active days use UTC.",
                 )}
+              </p>
+              <p className="admin-key-note">
+                {detail.usage.summary.mcp_http.coverage === "possibly_partial"
+                  ? t(
+                      "MCP HTTP 수집은 이 기간 전에 시작되었지만 중단이나 롤백으로 누락이 있을 수 있습니다.",
+                      "MCP HTTP collection began before this window; outages or rollbacks may leave gaps.",
+                    )
+                  : detail.usage.summary.mcp_http.coverage === "partial"
+                    ? t(
+                        `MCP HTTP 수집은 ${timestamp(detail.usage.summary.mcp_http.collection_started_at)}에 시작되었습니다. 그 이전은 알 수 없습니다.`,
+                        `MCP HTTP collection began ${timestamp(detail.usage.summary.mcp_http.collection_started_at)}; earlier traffic is unknown and interruptions may leave gaps.`,
+                      )
+                    : t(
+                        "MCP HTTP 수집 시작 시점을 알 수 없어 이전 트래픽을 추정할 수 없습니다.",
+                        "MCP HTTP collection start is unknown; earlier traffic cannot be inferred.",
+                      )}
               </p>
               <div className="stats-grid admin-key-stats">
                 <div className="stat">
-                  <div>{t("기록된 호출", "Recorded calls")}</div>
-                  <strong>{detail.usage.summary.requests_30d}</strong>
+                  <div>
+                    {t("기록된 REST HTTP 요청", "Recorded REST HTTP requests")}
+                  </div>
+                  <strong>{detail.usage.summary.rest_http.requests_30d}</strong>
+                  <small>
+                    {detail.usage.summary.rest_http.active_days_30d}{" "}
+                    {t(
+                      "UTC 사용 일수 · 오류 응답",
+                      "UTC active days · error responses",
+                    )}{" "}
+                    {detail.usage.summary.rest_http.errors_30d}
+                  </small>
                 </div>
                 <div className="stat">
-                  <div>{t("사용 일수", "Active days")}</div>
-                  <strong>{detail.usage.summary.active_days_30d}</strong>
+                  <div>
+                    {t("기록된 MCP HTTP 요청", "Recorded MCP HTTP requests")}
+                  </div>
+                  <strong>
+                    {detail.usage.summary.mcp_http.coverage === "unknown" &&
+                    !detail.usage.summary.mcp_http.observed_requests_30d
+                      ? "—"
+                      : detail.usage.summary.mcp_http.observed_requests_30d}
+                  </strong>
+                  <small>
+                    {detail.usage.summary.mcp_http.coverage === "unknown" &&
+                    !detail.usage.summary.mcp_http.observed_requests_30d
+                      ? t("수집 범위 알 수 없음", "Coverage unknown")
+                      : t(
+                          `UTC 사용 ${detail.usage.summary.mcp_http.active_days_30d}일 · 전송 오류 ${detail.usage.summary.mcp_http.transport_errors_30d}`,
+                          `${detail.usage.summary.mcp_http.active_days_30d} UTC active days · transport errors ${detail.usage.summary.mcp_http.transport_errors_30d}`,
+                        )}
+                  </small>
                 </div>
                 <div className="stat">
-                  <div>{t("오류 응답 (400+)", "Error responses (400+)")}</div>
-                  <strong>{detail.usage.summary.failures_30d}</strong>
+                  <div>
+                    {t("이전 MCP 도구 이벤트", "Legacy MCP tool events")}
+                  </div>
+                  <strong>
+                    {detail.usage.summary.legacy_mcp_tool.events_30d}
+                  </strong>
+                  <small>
+                    {t(
+                      "일부 도구만 · HTTP 요청 수 아님",
+                      "Selected tools only · not HTTP requests",
+                    )}
+                  </small>
                 </div>
               </div>
               <section className="panel">
                 <div className="panel-heading">
-                  <h3>{t("호출 경로 · 최근 30일", "Routes · last 30 days")}</h3>
+                  <h3>
+                    {t(
+                      "경로별 기록 · 최근 30일",
+                      "Recorded routes · last 30 days",
+                    )}
+                  </h3>
                 </div>
                 {detail.usage.summary.routes_30d.length ? (
                   <div
@@ -381,13 +459,15 @@ function AdminKeyDetail({ id, onBack }: { id: string; onBack: () => void }) {
                     <table>
                       <thead>
                         <tr>
+                          <th>{t("유형", "Type")}</th>
                           <th>{t("경로", "Route")}</th>
-                          <th>{t("호출", "Calls")}</th>
+                          <th>{t("기록", "Records")}</th>
                         </tr>
                       </thead>
                       <tbody>
                         {detail.usage.summary.routes_30d.map((route, i) => (
                           <tr key={i}>
+                            <td>{unitLabel(route.unit)}</td>
                             <td className="mono">{route.route || "—"}</td>
                             <td>{route.count}</td>
                           </tr>
@@ -398,8 +478,8 @@ function AdminKeyDetail({ id, onBack }: { id: string; onBack: () => void }) {
                 ) : (
                   <Empty>
                     {t(
-                      "최근 30일에 기록된 호출이 없습니다.",
-                      "No calls recorded in the last 30 days.",
+                      "최근 30일에 기록이 없습니다.",
+                      "No records in the last 30 days.",
                     )}
                   </Empty>
                 )}
@@ -407,20 +487,24 @@ function AdminKeyDetail({ id, onBack }: { id: string; onBack: () => void }) {
               <section className="panel" aria-labelledby="key-calls-heading">
                 <div className="panel-heading">
                   <h3 id="key-calls-heading">
-                    {t("기록된 호출 · 전체 기간", "Recorded calls · all time")}
+                    {t(
+                      "기록된 이벤트 · 전체 기간",
+                      "Recorded events · all time",
+                    )}
                   </h3>
                 </div>
                 {detail.usage.items.length ? (
                   <div
                     className="table-scroll"
                     role="region"
-                    aria-label={t("기록된 호출 표", "Recorded calls table")}
+                    aria-label={t("기록된 이벤트 표", "Recorded events table")}
                     tabIndex={0}
                   >
                     <table>
                       <thead>
                         <tr>
                           <th>{t("시간", "Time")}</th>
+                          <th>{t("유형", "Type")}</th>
                           <th>{t("경로", "Route")}</th>
                           <th>{t("상태", "Status")}</th>
                           <th>{t("지연", "Latency")}</th>
@@ -430,6 +514,7 @@ function AdminKeyDetail({ id, onBack }: { id: string; onBack: () => void }) {
                         {detail.usage.items.map((call) => (
                           <tr key={call.id}>
                             <td>{timestamp(call.created_at)}</td>
+                            <td>{unitLabel(call.unit)}</td>
                             <td className="mono">{call.route || "—"}</td>
                             <td>{call.status}</td>
                             <td>{Math.round(call.latency_ms)} ms</td>
@@ -440,7 +525,7 @@ function AdminKeyDetail({ id, onBack }: { id: string; onBack: () => void }) {
                   </div>
                 ) : (
                   <Empty>
-                    {t("기록된 호출이 없습니다.", "No recorded calls.")}
+                    {t("기록된 이벤트가 없습니다.", "No recorded events.")}
                   </Empty>
                 )}
                 <Pagination

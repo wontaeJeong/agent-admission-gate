@@ -69,3 +69,62 @@
 - Cause: the isolated test configuration did not reproduce the normal boards flag, its temporary TypeScript file was not formatted before the check, and page inputs had no database-safe upper bound.
 - Resolution: match the normal test flags, format and remove the temporary configuration, and validate pagination inputs before querying.
 - Prevention: compare isolated test settings with the repository configuration before running the suite, exclude temporary files from final checks, and test extreme numeric inputs at API boundaries.
+
+### Admin key API and MCP event compatibility (2026-11-02)
+
+- Failure: the first admin-key implementation changed an existing array response and counted historical MCP tool events as HTTP requests.
+- Cause: the admin endpoint's external consumers and the concurrent MCP HTTP instrumentation were not accounted for in the initial design.
+- Resolution: retain the array endpoint, provide a separate paginated search endpoint, and label REST HTTP, MCP HTTP and legacy tool records separately with explicit MCP collection coverage.
+- Prevention: check existing endpoint contracts and coordinate event units and collection boundaries across concurrent features before defining metrics or UI labels.
+### Review revisit verification (2026-11-02)
+
+- Failure: a browser-test setup command used repository-relative paths while already in the frontend directory, so it could not create the test files.
+- Cause and resolution: the command's working directory was overlooked; the files were created from the repository root and the test was rerun.
+- Prevention: check paths against the command's declared working directory before creating files or launching a test.
+
+- Failure: the first mobile screenshot captured the sidebar halfway through its closing animation, obscuring the review panel.
+- Cause and resolution: the capture followed the viewport resize before the CSS transition settled. The test now enables reduced motion and waits until the sidebar is outside the viewport.
+- Prevention: wait for the final responsive layout before taking screenshots, and inspect the captured image as well as checking for overflow.
+
+- Failure: an exact label lookup stopped resolving after a controlled textarea had been filled, although the textbox retained the correct accessible name and value.
+- Resolution: the browser test now locates the control by its textbox role and accessible name.
+- Prevention: use accessible role-and-name selectors for assertions on populated form controls and inspect the accessibility snapshot when selectors behave unexpectedly.
+
+- Failure: the frontend formatting check picked up an unformatted temporary Playwright configuration and failed; a subsequent forced-remove command was rejected by the command policy.
+- Cause and resolution: the temporary file matched the check's `*.ts` glob. It was removed by its exact path without force, after which the formatting check passed.
+- Prevention: remove temporary configuration files before repository-wide format checks and use a specific non-forced removal command.
+
+### Scan scope regression verification (2026-11-02)
+
+- Failure: an authorization test initially assumed the bootstrap administrator was not reviewer-qualified, but the fixture creates that administrator with the reviewer flag enabled. The test now explicitly removes the qualification and checks the administrator and API-key boundaries separately.
+- Prevention: inspect fixture roles and permissions before asserting role-specific behavior, and use concise test tracebacks so fixture data such as temporary test tokens is not printed.
+- Failure: the first browser assertion ran after the URL changed but before the lazy-loaded scans screen replaced the dashboard, and an initial mobile screenshot captured the sidebar mid-transition. The test now waits for the scans heading and the sidebar's final position before taking screenshots.
+- Prevention: wait for the destination UI and completed responsive transitions, not only the navigation URL, before inspecting controls or capturing screenshots.
+- Failure: a file-creation command used a repository-relative prefix while already in the frontend directory. It was rerun from the repository root with the correct paths.
+- Prevention: check the command's working directory before constructing relative output paths.
+
+### Concurrent lessons entries (2026-11-02)
+
+- Failure: integrating the current main branch produced a conflict in the lessons log.
+- Cause: independent feature branches appended entries at the same end of the file.
+- Resolution: preserve both sets of entries and verify the combined branch.
+- Prevention: merge concurrent append-only entries deliberately and check for conflict markers before committing.
+
+### Cross-branch integration setup (2026-11-02)
+
+- Failure: an integration worktree command used the new directory as its working directory before it existed. The first combined browser suite also failed two dashboard tests after MCP metrics changed the response shape.
+- Cause: setup order and independently changed mock fixtures were missed.
+- Resolution: create the worktree from the existing checkout, and coordinate the dashboard fixture updates with the MCP metrics work.
+- Prevention: create a worktree before selecting it as a working directory, and run combined browser tests when concurrent features share an API response.
+### Review branch refresh (2026-11-02)
+
+- Failure: a connector upload helper assumed that temporary orchestration metadata from an earlier task was still available after the handoff.
+- Resolution: reconstruct the file list and object hashes from the committed Git tree before uploading.
+- Prevention: derive handoff state from durable repository objects rather than in-memory tool state.
+
+### Browser verification after main update (2026-11-02)
+
+- Failure: five review browser checks used an older frontend entrypoint after new hashed assets had been built.
+- Cause: the served `dist/index.html` still referenced the earlier bundle; the reason it was stale has not been established.
+- Resolution: rebuild, verify the entrypoint references the new bundle, and rerun the browser suite.
+- Prevention: verify the generated entrypoint after rebuilding an integrated branch before using browser-test failures to diagnose source changes.

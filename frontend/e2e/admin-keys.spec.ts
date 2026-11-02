@@ -48,13 +48,21 @@ test("administrators search, inspect and revoke keys with recorded evidence", as
   await expect(
     page.getByRole("heading", { name: `${prefix} agent 00` }),
   ).toBeVisible();
-  await expect(page.getByText("Recorded calls", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Recorded REST HTTP requests", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Legacy MCP tool events", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/MCP HTTP collection (start is unknown|began|covers)/),
+  ).toBeVisible();
   await expect(
     page.getByText("/api/scans", { exact: true }).first(),
   ).toBeVisible();
   await expect(page.getByText("Key created")).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Recorded calls table" }),
+    page.getByRole("region", { name: "Recorded events table" }),
   ).toHaveAttribute("tabindex", "0");
   await page.screenshot({
     path: "test-results/admin-key-detail.png",

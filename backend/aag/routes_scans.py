@@ -14,9 +14,11 @@ from fastapi import (
     UploadFile,
 )
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 
 from .auth import Actor, actor
 from .db import audit, record
+from .job_query import job_scope_filters, utc_window_start
 from .models import Comment, Job, Review, User
 from .schemas import CommentRequest, Reason, ReviewDecision, ScanRequest
 from .service import TERMINAL, owned_job
@@ -74,12 +76,26 @@ def list_scans(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     mine: bool = False,
+    scope: Literal["personal", "review", "all"] | None = None,
+    days: int | None = None,
     a: Actor = Depends(actor),
 ):
     a.scope("scan:read")
+    if scope == "review":
+        a.review()
+    if scope == "all":
+        a.interactive()
+        if not a.staff:
+            raise HTTPException(403, "Staff required")
+    if days is not None and days not in {7, 14, 30, 90}:
+        raise HTTPException(422, "Days must be 7, 14, 30 or 90")
     query = select(Job)
+    if scope:
+        query = query.where(*job_scope_filters(a, scope))
     if mine or a.key_id or not a.staff:
         query = query.where(Job.owner_id == a.id)
+    if days is not None:
+        query = query.where(Job.created_at >= utc_window_start(days))
     if q:
         query = query.where(Job.source.contains(q, autoescape=True))
     if status:
@@ -103,7 +119,15 @@ def list_scans(
 def get_scan(job_id: str, request: Request, a: Actor = Depends(actor)):
     a.scope("scan:read")
     with request.app.state.db.session() as s:
-        return record(owned_job(s, job_id, a))
+        job = owned_job(s, job_id, a)
+        payload = record(job)
+        if not a.key_id:
+            query = select(Review).where(Review.job_id == job_id)
+            if not a.staff:
+                query = query.where(Review.requester_id == a.id)
+            review = s.scalar(query)
+            payload["review"] = {"id": review.id, "status": review.status} if review else None
+        return payload
 
 
 @router.post("/scans/{job_id}/cancel")
@@ -203,19 +227,28 @@ def comment_scan(job_id: str, data: CommentRequest, request: Request, a: Actor =
 @router.post("/scans/{job_id}/review", status_code=201)
 def request_review(job_id: str, data: Reason, request: Request, a: Actor = Depends(actor)):
     a.interactive()
-    with request.app.state.db.session.begin() as s:
-        job = owned_job(s, job_id, a)
-        if job.owner_id != a.id:
-            raise HTTPException(403, "Only the scan owner can request review")
-        if job.status != "COMPLETED":
-            raise HTTPException(409, "Only completed scans can be reviewed")
-        if s.scalar(select(Review).where(Review.job_id == job_id)):
-            raise HTTPException(409, "Review already exists; rescan for another review")
-        review = Review(job_id=job_id, requester_id=a.id, reason=data.reason)
-        s.add(review)
-        s.flush()
-        audit(s, a.id, "review.request", review.id)
-        return record(review)
+    try:
+        with request.app.state.db.session.begin() as s:
+            job = owned_job(s, job_id, a)
+            if job.owner_id != a.id:
+                raise HTTPException(403, "Only the scan owner can request review")
+            if job.status != "COMPLETED":
+                raise HTTPException(409, "Only completed scans can be reviewed")
+            if s.scalar(select(Review).where(Review.job_id == job_id)):
+                raise HTTPException(409, "Review request could not be created for this scan")
+            review = Review(job_id=job_id, requester_id=a.id, reason=data.reason)
+            s.add(review)
+            s.flush()
+            audit(s, a.id, "review.request", review.id)
+            return record(review)
+    except IntegrityError:
+        # Another request can win after the duplicate check. Preserve unrelated DB errors.
+        with request.app.state.db.session() as s:
+            if s.scalar(select(Review.id).where(Review.job_id == job_id)):
+                raise HTTPException(
+                    409, "Review request could not be created for this scan"
+                ) from None
+        raise
 
 
 @router.get("/reviews")

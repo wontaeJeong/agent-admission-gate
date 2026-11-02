@@ -14,7 +14,15 @@ import {
   ShieldCheck,
   Upload,
 } from "lucide-react";
-import { api, number, send, timestamp, type Finding, type Job } from "../api";
+import {
+  APIError,
+  api,
+  number,
+  send,
+  timestamp,
+  type Finding,
+  type Job,
+} from "../api";
 import {
   Badge,
   Code,
@@ -32,11 +40,18 @@ import { useApp, useText } from "../context";
 export function Jobs() {
   const [params, setParams] = useSearchParams(),
     t = useText(),
+    { user } = useApp(),
+    staff = user.role === "admin" || user.reviewer,
+    scope =
+      params.get("scope") ||
+      (params.get("mine") === "true" || !staff ? "personal" : "all"),
     page = Number(params.get("page") || 1);
   const load = useLoad(`/scans?${params}`, 0, 5000);
   const change = (key: string, value: string) => {
     const next = new URLSearchParams(params);
-    next.set(key, value);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    if (key === "scope") next.delete("mine");
     if (key !== "page") next.set("page", "1");
     setParams(next);
   };
@@ -56,6 +71,40 @@ export function Jobs() {
         }
       />
       <div className="filters">
+        <select
+          aria-label={t("조회 범위", "Scope")}
+          value={scope}
+          onChange={(e) => change("scope", e.target.value)}
+        >
+          <option value="personal">{t("내 검사", "My scans")}</option>
+          {(user.reviewer || scope === "review") && (
+            <option value="review" disabled={!user.reviewer}>
+              {t("검토 요청 검사", "Scans with review requests")}
+            </option>
+          )}
+          {(staff || scope === "all") && (
+            <option value="all" disabled={!staff}>
+              {t("전체 검사", "All scans")}
+            </option>
+          )}
+          {!["personal", "review", "all"].includes(scope) && (
+            <option value={scope} disabled>
+              {t("사용할 수 없는 범위", "Unavailable scope")}
+            </option>
+          )}
+        </select>
+        <select
+          aria-label={t("조회 기간", "Date range")}
+          value={params.get("days") || ""}
+          onChange={(e) => change("days", e.target.value)}
+        >
+          <option value="">{t("전체 기간", "All time")}</option>
+          {[7, 14, 30, 90].map((days) => (
+            <option key={days} value={days}>
+              {t(`최근 ${days}일`, `Last ${days} days`)} · UTC
+            </option>
+          ))}
+        </select>
         <label className="search">
           <Search size={17} />
           <input
@@ -90,14 +139,16 @@ export function Jobs() {
             <option key={v}>{v}</option>
           ))}
         </select>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={params.get("mine") === "true"}
-            onChange={(e) => change("mine", String(e.target.checked))}
-          />
-          {t("내 검사만", "My scans")}
-        </label>
+        {params.get("mine") === "true" && (
+          <label className="check">
+            <input
+              type="checkbox"
+              checked
+              onChange={() => change("mine", "")}
+            />
+            {t("내 검사만", "My scans only")}
+          </label>
+        )}
       </div>
       <State {...load}>
         {load.data && (
@@ -368,6 +419,7 @@ export function JobDetail() {
     [params, setParams] = useSearchParams(),
     [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
+    [reviewError, setReviewError] = useState(""),
     [reason, setReason] = useState(""),
     [busy, setBusy] = useState(false),
     t = useText(),
@@ -379,11 +431,13 @@ export function JobDetail() {
   async function requestReview(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setReviewError("");
     try {
       const r = await send(`/scans/${id}/review`, { reason });
       navigate("/reviews/" + r.id);
     } catch (e) {
-      setError((e as Error).message);
+      setReviewError((e as Error).message);
+      if (e instanceof APIError && e.status === 409) setRefresh((x) => x + 1);
     } finally {
       setBusy(false);
     }
@@ -462,32 +516,67 @@ export function JobDetail() {
             {tab === "admission" && (
               <>
                 <Admission job={job} />
-                {job.owner_id === user.id && job.status === "COMPLETED" && (
-                  <section className="panel form-panel">
-                    <h2>{t("검토 요청", "Request review")}</h2>
+                {job.review && (
+                  <section
+                    className="panel form-panel"
+                    aria-labelledby="scan-review-title"
+                  >
+                    <h2 id="scan-review-title">
+                      {t("검토 요청", "Review request")}
+                    </h2>
+                    <p>
+                      <Badge value={job.review.status} />
+                    </p>
                     <p>
                       {t(
-                        "판정에 대한 설명이나 추가 근거를 검토자에게 전달합니다.",
-                        "Provide context and evidence for a reviewer.",
+                        "이 검사의 검토 요청과 결정 내용을 확인합니다.",
+                        "View this scan's review request and decision.",
                       )}
                     </p>
-                    <form onSubmit={requestReview}>
-                      <label>
-                        {t("요청 사유", "Reason")}
-                        <textarea
-                          value={reason}
-                          onChange={(e) => setReason(e.target.value)}
-                          minLength={5}
-                          maxLength={4000}
-                          required
-                        />
-                      </label>
-                      <button disabled={busy} className="primary">
-                        {t("검토 요청", "Request review")}
-                      </button>
-                    </form>
+                    <Link to={"/reviews/" + job.review.id}>
+                      {t("검토 상세 보기", "View review details")} ↗
+                    </Link>
                   </section>
                 )}
+                {job.owner_id === user.id &&
+                  job.status === "COMPLETED" &&
+                  job.review === undefined && (
+                    <p className="panel-note" role="status">
+                      {t(
+                        "검토 상태를 불러올 수 없습니다. 페이지를 새로고침해 주세요.",
+                        "Review status is unavailable. Reload the page to try again.",
+                      )}
+                    </p>
+                  )}
+                {job.owner_id === user.id &&
+                  job.status === "COMPLETED" &&
+                  job.review === null && (
+                    <section className="panel form-panel">
+                      <h2>{t("검토 요청", "Request review")}</h2>
+                      <p>
+                        {t(
+                          "판정에 대한 설명이나 추가 근거를 검토자에게 전달합니다.",
+                          "Provide context and evidence for a reviewer.",
+                        )}
+                      </p>
+                      <form onSubmit={requestReview}>
+                        <ErrorMessage value={reviewError} />
+                        <label>
+                          {t("요청 사유", "Reason")}
+                          <textarea
+                            value={reason}
+                            onChange={(e) => setReason(e.target.value)}
+                            minLength={5}
+                            maxLength={4000}
+                            required
+                          />
+                        </label>
+                        <button disabled={busy} className="primary">
+                          {t("검토 요청", "Request review")}
+                        </button>
+                      </form>
+                    </section>
+                  )}
               </>
             )}
             {tab === "findings" && (

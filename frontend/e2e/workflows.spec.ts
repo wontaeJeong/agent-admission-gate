@@ -121,6 +121,7 @@ test("ZIP scan, findings, request review, markdown and board privacy controls", 
       .evaluate((el) => getComputedStyle(el).backgroundColor),
   ).toBe("rgb(13, 16, 24)");
   await page.getByRole("tab", { name: "Admission", exact: true }).click();
+  const scanUrl = page.url();
   await page
     .getByLabel("요청 사유")
     .fill("Please review this unsafe shell capability");
@@ -129,6 +130,13 @@ test("ZIP scan, findings, request review, markdown and board privacy controls", 
   await expect(
     page.getByText("본인이 요청한 검사는 다른 검토자가 결정해야 합니다."),
   ).toBeVisible();
+  const reviewUrl = new URL(page.url()).pathname;
+  await page.goto(scanUrl);
+  const reviewLink = page.getByRole("link", { name: "검토 상세 보기" });
+  await expect(reviewLink).toHaveAttribute("href", reviewUrl);
+  await expect(page.getByLabel("요청 사유")).toHaveCount(0);
+  await page.reload();
+  await expect(reviewLink).toHaveAttribute("href", reviewUrl);
   await page.goto("/boards?kind=voc");
   await page.getByRole("button", { name: "글 작성" }).click();
   await page.getByLabel("제목", { exact: true }).fill("Browser feedback");

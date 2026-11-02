@@ -1,7 +1,7 @@
 import time
 
 from aag.models import APIKey, User
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 
 def test_admin_key_listing_search_filter_and_all_pages(client, app):
@@ -45,8 +45,18 @@ def test_admin_key_listing_search_filter_and_all_pages(client, app):
                 ),
             ]
         )
-    first = client.get("/api/admin/api-keys").json()
-    last = client.get("/api/admin/api-keys?page=26").json()
+    legacy_response = client.get("/api/admin/api-keys")
+    legacy_rows = legacy_response.json()
+    assert isinstance(legacy_rows, list)
+    assert len(legacy_rows) == 500
+    assert legacy_response.headers["Deprecation"] == "true"
+    assert legacy_response.headers["X-Total-Count"] == "503"
+    assert legacy_response.headers["X-Result-Limit"] == "500"
+    assert legacy_response.headers["X-Results-Truncated"] == "true"
+    assert "requests_30d" in legacy_rows[0]
+    assert "digest" not in legacy_rows[0]
+    first = client.get("/api/admin/api-keys/search").json()
+    last = client.get("/api/admin/api-keys/search?page=26").json()
     assert first["total"] == 503
     assert len(first["items"]) == 20
     assert len(last["items"]) == 3
@@ -55,31 +65,39 @@ def test_admin_key_listing_search_filter_and_all_pages(client, app):
             {
                 row["id"]
                 for page in range(1, 27)
-                for row in client.get(f"/api/admin/api-keys?page={page}").json()["items"]
+                for row in client.get(f"/api/admin/api-keys/search?page={page}").json()["items"]
             }
         )
         == 503
     )
     assert "digest" not in first["items"][0]
     assert (
-        client.get("/api/admin/api-keys", params={"q": "sYnThEtIc KeY 0500"}).json()["items"][0][
-            "id"
-        ]
+        client.get("/api/admin/api-keys/search", params={"q": "sYnThEtIc KeY 0500"}).json()[
+            "items"
+        ][0]["id"]
         == "key-0500"
     )
-    assert client.get("/api/admin/api-keys", params={"q": "%"}).json()["total"] == 0
+    assert client.get("/api/admin/api-keys/search", params={"q": "%"}).json()["total"] == 0
     assert (
-        client.get("/api/admin/api-keys", params={"state": "expired"}).json()["items"][0]["id"]
+        client.get("/api/admin/api-keys/search", params={"state": "expired"}).json()["items"][0][
+            "id"
+        ]
         == "expired"
     )
     assert (
-        client.get("/api/admin/api-keys", params={"state": "revoked"}).json()["items"][0]["id"]
+        client.get("/api/admin/api-keys/search", params={"state": "revoked"}).json()["items"][0][
+            "id"
+        ]
         == "revoked"
     )
-    assert client.get("/api/admin/api-keys", params={"state": "active"}).json()["total"] == 501
-    assert client.get("/api/admin/api-keys", params={"state": "unknown"}).status_code == 422
     assert (
-        client.get("/api/admin/api-keys", params={"page": "999999999999999999999999"}).status_code
+        client.get("/api/admin/api-keys/search", params={"state": "active"}).json()["total"] == 501
+    )
+    assert client.get("/api/admin/api-keys/search", params={"state": "unknown"}).status_code == 422
+    assert (
+        client.get(
+            "/api/admin/api-keys/search", params={"page": "999999999999999999999999"}
+        ).status_code
         == 422
     )
 
@@ -91,6 +109,7 @@ def test_admin_key_details_show_recorded_usage_and_key_audit_without_secrets(cli
     other = client.post("/api/api-keys", json={"name": "Another agent"}).json()
     now = time.time()
     with app.state.db.session.begin() as s:
+        s.execute(delete(Usage).where(Usage.kind == "mcp_http_start"))
         s.add_all(
             [
                 Usage(
@@ -119,6 +138,19 @@ def test_admin_key_details_show_recorded_usage_and_key_audit_without_secrets(cli
                     status=500,
                     created_at=now + 86400,
                 ),
+                Usage(
+                    key_id=created["id"], kind="mcp_http", route="/mcp", status=503, created_at=now
+                ),
+                Usage(
+                    key_id=created["id"], kind="api", route="mcp:scan", status=200, created_at=now
+                ),
+                Usage(
+                    id="system:mcp-http-collection-start",
+                    kind="mcp_http_start",
+                    user_id=None,
+                    key_id=None,
+                    created_at=now - 5 * 86400,
+                ),
                 Usage(key_id=other["id"], kind="api", route="other", status=200, created_at=now),
                 Usage(
                     key_id=created["id"], kind="llm", route="not-a-call", status=200, created_at=now
@@ -145,12 +177,31 @@ def test_admin_key_details_show_recorded_usage_and_key_audit_without_secrets(cli
     data = response.json()
     assert data["key"]["id"] == created["id"]
     assert "digest" not in data["key"]
-    assert data["usage"]["summary"]["requests_30d"] == 22
-    assert data["usage"]["summary"]["active_days_30d"] == 22
-    assert data["usage"]["summary"]["failures_30d"] == 11
-    assert data["usage"]["summary"]["routes_30d"] == [{"route": "/api/scans", "count": 22}]
-    assert data["usage"]["total"] == 24
+    summary = data["usage"]["summary"]
+    assert summary["rest_http"] == {"requests_30d": 22, "active_days_30d": 22, "errors_30d": 11}
+    assert summary["mcp_http"]["observed_requests_30d"] == 1
+    assert summary["mcp_http"]["transport_errors_30d"] == 1
+    assert summary["mcp_http"]["coverage"] == "partial"
+    assert summary["mcp_http"]["collection_started_at"] == now - 5 * 86400
+    assert summary["legacy_mcp_tool"]["events_30d"] == 1
+    legacy_response = client.get("/api/admin/api-keys")
+    assert legacy_response.headers["X-Results-Truncated"] == "false"
+    legacy_rows = legacy_response.json()
+    legacy_key = next(row for row in legacy_rows if row["id"] == created["id"])
+    assert legacy_key["requests_30d"] == 23
+    assert legacy_key["mcp_http_coverage_30d"]["coverage"] == "partial"
+    assert {item["unit"] for item in summary["routes_30d"]} == {
+        "rest_http",
+        "mcp_http",
+        "legacy_mcp_tool",
+    }
+    assert data["usage"]["total"] == 26
     assert len(data["usage"]["items"]) == 20
+    assert {item["unit"] for item in data["usage"]["items"]} == {
+        "rest_http",
+        "mcp_http",
+        "legacy_mcp_tool",
+    }
     assert data["audit"]["total"] == 22
     assert len(data["audit"]["items"]) == 20
     assert any(
@@ -159,7 +210,7 @@ def test_admin_key_details_show_recorded_usage_and_key_audit_without_secrets(cli
         if item["reason"]
     )
     second = client.get(f"/api/admin/api-keys/{created['id']}?usage_page=2&audit_page=2").json()
-    assert len(second["usage"]["items"]) == 4
+    assert len(second["usage"]["items"]) == 6
     assert len(second["audit"]["items"]) == 2
     assert client.get("/api/admin/api-keys/missing").status_code == 404
     invalid_page = client.get(
@@ -186,15 +237,18 @@ def test_admin_key_routes_require_interactive_admin_and_revoke_with_reason(clien
     path = f"/api/admin/api-keys/{created['id']}"
     bearer = {"Authorization": "Bearer " + created["token"]}
     list_response = client.get("/api/admin/api-keys", headers=bearer)
+    search_response = client.get("/api/admin/api-keys/search", headers=bearer)
     detail_response = client.get(path, headers=bearer)
     revoke_response = client.post(
         path + "/revoke", headers=bearer, json={"reason": "No longer used"}
     )
     assert list_response.status_code == 403
+    assert search_response.status_code == 403
     assert detail_response.status_code == 403
     assert revoke_response.status_code == 403
     login(client, "alice")
     assert client.get("/api/admin/api-keys").status_code == 403
+    assert client.get("/api/admin/api-keys/search").status_code == 403
     assert client.get(path).status_code == 403
     assert client.post(path + "/revoke", json={"reason": "No longer used"}).status_code == 403
     login(client, "admin")
@@ -220,3 +274,62 @@ def test_admin_key_routes_require_interactive_admin_and_revoke_with_reason(clien
             )
             == 1
         )
+
+
+def test_mcp_collection_coverage_unknown_without_marker_and_possibly_partial_with_old_marker(
+    client, app
+):
+    from aag.models import Usage
+
+    created = client.post("/api/api-keys", json={"name": "Coverage test"}).json()
+    with app.state.db.session.begin() as s:
+        s.execute(delete(Usage).where(Usage.kind == "mcp_http_start"))
+    path = f"/api/admin/api-keys/{created['id']}"
+    missing = client.get(path).json()["usage"]["summary"]["mcp_http"]
+    assert missing["coverage"] == "unknown"
+    assert missing["collection_started_at"] is None
+    assert missing["observed_requests_30d"] == 0
+    with app.state.db.session.begin() as s:
+        s.add(
+            Usage(
+                id="system:mcp-http-collection-start",
+                kind="mcp_http_start",
+                user_id=None,
+                key_id=None,
+                created_at=time.time() - 31 * 86400,
+            )
+        )
+    observed = client.get(path).json()["usage"]["summary"]["mcp_http"]
+    assert observed["coverage"] == "possibly_partial"
+
+
+def test_admin_detail_reports_real_mcp_http_when_instrumented(client):
+    import importlib.util
+
+    import pytest
+
+    if importlib.util.find_spec("aag.usage") is None:
+        pytest.skip("MCP HTTP instrumentation is not installed")
+    created = client.post("/api/api-keys", json={"name": "Integration agent"}).json()
+    headers = {
+        "Authorization": "Bearer " + created["token"],
+        "Accept": "application/json, text/event-stream",
+    }
+    call = client.post(
+        "/mcp/", headers=headers, json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+    )
+    assert call.status_code == 200
+    response = client.get("/api/admin/api-keys/" + created["id"])
+    assert response.status_code == 200
+    exposes_token = created["token"] in response.text
+    assert not exposes_token
+    usage = response.json()["usage"]
+    assert usage["summary"]["mcp_http"]["observed_requests_30d"] == 1
+    assert usage["summary"]["mcp_http"]["coverage"] == "partial"
+    assert usage["summary"]["rest_http"]["requests_30d"] == 0
+    assert usage["summary"]["legacy_mcp_tool"]["events_30d"] == 0
+    assert usage["total"] == 1
+    assert usage["items"][0]["unit"] == "mcp_http"
+    assert usage["items"][0]["route"] == "/mcp"
+    rows = client.get("/api/admin/api-keys").json()
+    assert next(row for row in rows if row["id"] == created["id"])["requests_30d"] == 1
