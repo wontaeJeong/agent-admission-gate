@@ -49,6 +49,18 @@
 - Resolution: reduce menu widths on small screens and verify the submenu's bounding box.
 - Prevention: inspect narrow viewport screenshots and assert horizontal menu bounds, not visibility alone.
 
+### Profile migration lint (2026-11-02)
+
+- Failure: the new migration did not meet Ruff import ordering.
+- Resolution: sorted the imports and reran lint and migration checks.
+- Prevention: run both Ruff check and format checks on migrations before the full test suite.
+- A temporary Playwright config in the frontend root was picked up by the formatting glob. It was formatted for local verification and excluded from the PR; keep local test configuration formatted or outside checked globs.
+
+### Profile save during session changes (2026-11-02)
+
+- Failure: a delayed profile-save response could update a later login session's sidebar, and typing during a pending save could be overwritten.
+- Resolution: re-fetch authoritative profile data for the current account after each completed save, keep successful saves synchronized after navigation, and disable the input during save.
+- Prevention: exercise delayed responses across logout and login in a browser test, including unchanged identity data.
 ### Review revisit verification (2026-11-02)
 
 - Failure: a browser-test setup command used repository-relative paths while already in the frontend directory, so it could not create the test files.
@@ -76,6 +88,11 @@
 - Failure: a file-creation command used a repository-relative prefix while already in the frontend directory. It was rerun from the repository root with the correct paths.
 - Prevention: check the command's working directory before constructing relative output paths.
 
+### Parallel changes to lessons (2026-11-02)
+
+- Failure: independent branches appended to the same end of the lessons file and Git reported a merge conflict.
+- Resolution: retained both branches’ entries and verified the merged diff.
+- Prevention: rebase each PR on current main and review shared documentation before merging.
 ### Review branch refresh (2026-11-02)
 
 - Failure: a connector upload helper assumed that temporary orchestration metadata from an earlier task was still available after the handoff.

@@ -20,6 +20,7 @@ title: 요구사항 추적과 검증 범위
 | 검토·코멘트·감사 | Review/Comment/Audit | 자기 승인 금지, 중복 결정, 내부 코멘트 비노출 |
 | 예외 allowlist | source/hash/fingerprint/expiry | 다른 소스/내용에 적용 금지, 다음 검사 적용 |
 | 사이드바/라우트/8개 상세 탭 | App.tsx, Scans.tsx | 브라우저 탐색·모바일 overflow·실 데이터 |
+| 사용자 설정·표시 이름 | routes_profile.py, AccountSettings.tsx | 본인 세션 전용·계정/감사 식별자와 분리, 이름 저장/초기화·이름 소유자 격리, 브라우저 로컬 화면 설정 구분 |
 | 역할별 대시보드/Recharts | Dashboard.tsx, routes_metrics.py | UTC zero-fill, 7/14/30/90, role scope |
 | API·토큰 사용량/CSV | Usage, routes_metrics.py | onprem/bedrock/systemone 분리, null와 0 구분 |
 | 공지/VOC/내부 검토 | routes_boards.py, Boards.tsx | Markdown XSS, visibility, revision conflict, 읽음/상태/고정 |
