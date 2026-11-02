@@ -48,3 +48,21 @@
 - Failure: the nested account menu extended beyond a 390px viewport despite being visible to the browser.
 - Resolution: reduce menu widths on small screens and verify the submenu's bounding box.
 - Prevention: inspect narrow viewport screenshots and assert horizontal menu bounds, not visibility alone.
+
+### Review revisit verification (2026-11-02)
+
+- Failure: a browser-test setup command used repository-relative paths while already in the frontend directory, so it could not create the test files.
+- Cause and resolution: the command's working directory was overlooked; the files were created from the repository root and the test was rerun.
+- Prevention: check paths against the command's declared working directory before creating files or launching a test.
+
+- Failure: the first mobile screenshot captured the sidebar halfway through its closing animation, obscuring the review panel.
+- Cause and resolution: the capture followed the viewport resize before the CSS transition settled. The test now enables reduced motion and waits until the sidebar is outside the viewport.
+- Prevention: wait for the final responsive layout before taking screenshots, and inspect the captured image as well as checking for overflow.
+
+- Failure: an exact label lookup stopped resolving after a controlled textarea had been filled, although the textbox retained the correct accessible name and value.
+- Resolution: the browser test now locates the control by its textbox role and accessible name.
+- Prevention: use accessible role-and-name selectors for assertions on populated form controls and inspect the accessibility snapshot when selectors behave unexpectedly.
+
+- Failure: the frontend formatting check picked up an unformatted temporary Playwright configuration and failed; a subsequent forced-remove command was rejected by the command policy.
+- Cause and resolution: the temporary file matched the check's `*.ts` glob. It was removed by its exact path without force, after which the formatting check passed.
+- Prevention: remove temporary configuration files before repository-wide format checks and use a specific non-forced removal command.
