@@ -18,6 +18,7 @@ from .routes_boards import router as boards_router
 from .routes_identity import oidc_callback
 from .routes_identity import router as identity_router
 from .routes_metrics import router as metrics_router
+from .routes_profile import router as profile_router
 from .routes_scans import router as scans_router
 from .service import ScanService
 
@@ -139,7 +140,14 @@ def create_app(settings=None):
                 )
         return response
 
-    for router in (identity_router, scans_router, admin_router, metrics_router, boards_router):
+    for router in (
+        identity_router,
+        scans_router,
+        admin_router,
+        metrics_router,
+        boards_router,
+        profile_router,
+    ):
         app.include_router(router)
 
     @app.get("/health/live")

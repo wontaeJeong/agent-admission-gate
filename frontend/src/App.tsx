@@ -1,4 +1,11 @@
-import { Suspense, lazy, useEffect, useState, type FormEvent } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Link,
@@ -27,6 +34,7 @@ import {
   ShieldCheck,
   Sun,
   Unplug,
+  UserRound,
 } from "lucide-react";
 import { api, send, type User } from "./api";
 import { Brand, syncFavicon } from "./Brand";
@@ -72,12 +80,37 @@ const Boards = lazy(() =>
 const PostDetail = lazy(() =>
   import("./pages/Boards").then((m) => ({ default: m.PostDetail })),
 );
+const AccountSettings = lazy(() =>
+  import("./pages/AccountSettings").then((m) => ({
+    default: m.AccountSettings,
+  })),
+);
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null),
     [config, setConfig] = useState<any>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
+  const [displayName, setDisplayNameState] = useState<string | null>(null);
+  const profileGeneration = useRef(0);
+  const currentUserId = useRef<string | null>(null);
+  currentUserId.current = user?.id || null;
+  const [profileRevision, setProfileRevision] = useState(0);
+  const syncDisplayName = (ownerId: string, refreshPage: boolean) => {
+    if (currentUserId.current !== ownerId) return;
+    const generation = ++profileGeneration.current;
+    api<{ display_name: string | null }>("/profile")
+      .then((profile) => {
+        if (
+          profileGeneration.current !== generation ||
+          currentUserId.current !== ownerId
+        )
+          return;
+        setDisplayNameState(profile.display_name);
+        if (refreshPage) setProfileRevision((value) => value + 1);
+      })
+      .catch(() => {});
+  };
   const [theme, setTheme] = useState(
       localStorage.getItem("aag-theme") || "dark",
     ),
@@ -111,8 +144,24 @@ export default function App() {
     setOpen(false);
     document.getElementById("main-content")?.focus();
   }, [location.pathname]);
+  useEffect(() => {
+    const generation = ++profileGeneration.current;
+    setDisplayNameState(null);
+    if (user) {
+      api<{ display_name: string | null }>("/profile")
+        .then((profile) => {
+          if (profileGeneration.current === generation)
+            setDisplayNameState(profile.display_name);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      profileGeneration.current++;
+    };
+  }, [user?.id]);
   const refresh = async () => {
-    setUser(await api<User>("/auth/me"));
+    const current = await api<User>("/auth/me");
+    setUser(current);
     if (location.pathname === "/login") navigate("/");
   };
   if (loading || error)
@@ -128,7 +177,15 @@ export default function App() {
       <Login mode={config?.mode} onLogin={refresh} />
     );
   return (
-    <AppContext.Provider value={{ user, boards: config.boards_enabled, lang }}>
+    <AppContext.Provider
+      value={{
+        user,
+        boards: config.boards_enabled,
+        lang,
+        syncDisplayName,
+        profileRevision,
+      }}
+    >
       <a href="#main-content" className="skip-link">
         {t("본문으로 이동", "Skip to content")}
       </a>
@@ -201,15 +258,15 @@ export default function App() {
               <DropdownMenu.Trigger
                 className="user-line account-trigger"
                 aria-label={t(
-                  `계정 메뉴: ${user.name}`,
-                  `Account menu: ${user.name}`,
+                  `계정 메뉴: ${displayName || user.name}`,
+                  `Account menu: ${displayName || user.name}`,
                 )}
               >
                 <span className="avatar">
-                  {user.name.slice(0, 1).toUpperCase()}
+                  {(displayName || user.name).slice(0, 1).toUpperCase()}
                 </span>
                 <span>
-                  <b>{user.name}</b>
+                  <b>{displayName || user.name}</b>
                   <small>
                     {user.role}
                     {user.reviewer ? " · reviewer" : ""}
@@ -225,7 +282,7 @@ export default function App() {
                   sideOffset={8}
                 >
                   <DropdownMenu.Label className="account-label">
-                    {user.name}{" "}
+                    {displayName || user.name}{" "}
                     <small>
                       {user.role}
                       {user.reviewer ? " · reviewer" : ""}
@@ -242,6 +299,12 @@ export default function App() {
                     {theme === "dark"
                       ? t("라이트 모드", "Light mode")
                       : t("다크 모드", "Dark mode")}
+                  </DropdownMenu.Item>
+                  <DropdownMenu.Item className="account-item" asChild>
+                    <Link to="/settings">
+                      <UserRound size={16} />
+                      {t("사용자 설정", "User settings")}
+                    </Link>
                   </DropdownMenu.Item>
                   <DropdownMenu.Sub>
                     <DropdownMenu.SubTrigger className="account-item">
@@ -338,6 +401,7 @@ export default function App() {
                 <Route path="/api-keys" element={<Keys />} />
                 <Route path="/device-clients" element={<Devices />} />
                 <Route path="/guide" element={<Guide />} />
+                <Route path="/settings" element={<AccountSettings />} />
                 <Route
                   path="/admin"
                   element={

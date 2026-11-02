@@ -25,6 +25,14 @@ class User(Base):
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
 
 
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    display_name: Mapped[str | None] = mapped_column(String(80))
+
+
 class Session(Base):
     __tablename__ = "sessions"
     digest: Mapped[str] = mapped_column(String(64), primary_key=True)
