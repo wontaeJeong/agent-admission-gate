@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import RLock
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
@@ -8,6 +9,9 @@ from .models import Audit, Base
 
 class Database:
     def __init__(self, url):
+        # One process/replica is required until this coordination is durable and shared.
+        self.lifecycle_lock = RLock()
+        self.lifecycle_epochs = {}
         if url.startswith("sqlite:///"):
             path = url.removeprefix("sqlite:///")
             if path != ":memory:":

@@ -14,7 +14,7 @@ export default defineConfig({
     viewport: { width: 1440, height: 1000 },
   },
   webServer: {
-    command: `cd .. && AAG_DATABASE_URL=sqlite:///./data/e2e-${port}.db AAG_PUBLIC_URL=${baseURL} AAG_BOOTSTRAP_PASSWORD=test-password-long AAG_BOARDS_ENABLED=true uv run uvicorn aag.main:app --host 127.0.0.1 --port ${port}`,
+    command: `cd .. && AAG_DATABASE_URL=sqlite:///./data/e2e-${port}.db AAG_PUBLIC_URL=${baseURL} AAG_BOOTSTRAP_PASSWORD=test-password-long AAG_BOARDS_ENABLED=true AAG_API_KEYS_ENABLED=true uv run uvicorn aag.main:app --host 127.0.0.1 --port ${port} --no-access-log`,
     url: `${baseURL}/health/live`,
     reuseExistingServer: !process.env.CI && !process.env.AAG_E2E_PORT,
     timeout: 60000,

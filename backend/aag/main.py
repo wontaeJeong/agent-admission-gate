@@ -1,3 +1,4 @@
+import asyncio
 import secrets
 import threading
 import time
@@ -114,8 +115,8 @@ def create_app(settings=None):
                     request._receive = bounded_receive
                 if is_mcp:
                     try:
-                        request.state.actor = authenticate(
-                            db, settings, request.headers.get("authorization")
+                        request.state.actor = await asyncio.to_thread(
+                            authenticate, db, settings, request.headers.get("authorization")
                         )
                     except HTTPException as exc:
                         response = JSONResponse(

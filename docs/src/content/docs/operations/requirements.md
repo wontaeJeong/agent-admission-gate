@@ -13,10 +13,10 @@ title: 요구사항 추적과 검증 범위
 | Syft/Grype/Grant/OSV | native adapters, SBOM 전달/수 대조 | Syft/Grant 고정 바이너리 허용/거부 smoke; Grype DB·OSV 운영 확인 별도 |
 | ALLOW/REVIEW/BLOCK + Action | policy.py, findings/action UI | critical block, incomplete review, model downgrade 금지 |
 | 온프렘·Bedrock·SystemOne | llm.py | provider contract fixture, usage 결측/실패; 실 계정 별도 |
-| Keycloak/SSO | routes_identity.py | PKCE·서명·nonce/issuer/audience·만료·재사용 테스트; 실제 IdP 연결 별도 |
+| Keycloak/SSO | routes_identity.py + identity_lifecycle.py | PKCE·서명·nonce/issuer/audience·만료·재사용 및 비활성/그룹 제거·장애 시 차단 테스트(모의 계약); 실제 Keycloak/상위 IdP 동기화·verifier 연결은 배포자 검증 필수 |
 | user/admin + reviewer 직교 | auth.py + 모든 router | owner isolation, reviewer/admin, 비활성 사용자, last admin |
 | 1회 노출·90일 API 키 | APIKey, 개인/관리자 화면 | 해시 보관·만료·폐기·scope ceiling |
-| 8자리/10분 Device Code | DeviceClient/Grant | 승인/거절·poll interval·한 번 교환·만료 |
+| 8자리/10분 Device Code | DeviceClient/Grant | 승인/거절·poll interval·한 번 교환·만료·교환 시 사용자 확인; API 키 기본 비활성 |
 | 검토·코멘트·감사 | Review/Comment/Audit | 자기 승인 금지, 중복 결정, 내부 코멘트 비노출 |
 | 예외 allowlist | source/hash/fingerprint/expiry | 다른 소스/내용에 적용 금지, 다음 검사 적용 |
 | 사이드바/라우트/8개 상세 탭 | App.tsx, Scans.tsx | 브라우저 탐색·모바일 overflow·실 데이터 |

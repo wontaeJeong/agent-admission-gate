@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import HTTPException
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_headers
@@ -27,7 +29,7 @@ def build_mcp(db, settings, scans):
         url: str, profile: str = "static", ref: str | None = None, force_rescan: bool = False
     ) -> dict:
         """Submit an HTTPS Git package for asynchronous admission inspection."""
-        a = current("scan:write")
+        a = await asyncio.to_thread(current, "scan:write")
         try:
             return await scans.submit(
                 a, ScanRequest(url=url, profile=profile, ref=ref, force_rescan=force_rescan)

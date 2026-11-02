@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -10,6 +11,12 @@ from fastapi import HTTPException, Request
 from sqlalchemy import select
 
 from .db import audit
+from .identity_lifecycle import (
+    assert_identity_epoch,
+    check_identity,
+    identity_epoch,
+    lifecycle_configured,
+)
 from .models import APIKey, Session, User
 
 
@@ -37,6 +44,8 @@ class Actor:
     reviewer: bool
     key_id: str | None = None
     scopes: tuple[str, ...] = ()
+    identity_subject: str | None = None
+    identity_epoch: int | None = None
 
     @property
     def staff(self):
@@ -82,8 +91,9 @@ class RateLimiter:
 def authenticate(db, settings, authorization=None, cookie=None):
     now = time.time()
     key = None
-    with db.session.begin() as s:
+    with db.session() as s:
         if authorization:
+            require_api_keys(settings)
             parts = authorization.split()
             if len(parts) != 2 or parts[0].lower() != "bearer":
                 raise HTTPException(401, "Invalid authorization header")
@@ -91,7 +101,6 @@ def authenticate(db, settings, authorization=None, cookie=None):
             if not key or key.revoked_at or key.expires_at <= now:
                 raise HTTPException(401, "Invalid or expired API key")
             user = s.get(User, key.owner_id)
-            key.last_used_at = now
         elif cookie:
             session = s.get(Session, digest(cookie))
             if not session or session.expires_at <= now:
@@ -101,18 +110,63 @@ def authenticate(db, settings, authorization=None, cookie=None):
             raise HTTPException(401, "Authentication required")
         if not user or not user.active:
             raise HTTPException(401, "Account unavailable")
+        user_id, subject = user.id, user.subject
+    if settings.auth_mode == "oidc":
+        if not subject.startswith(settings.oidc_issuer + "|"):
+            raise HTTPException(401, "Account unavailable")
+        epoch = (
+            identity_epoch(db, subject)
+            if authorization or settings.oidc_lifecycle_sync_confirmed
+            else None
+        )
+        identity = (
+            check_identity(db, settings, subject, user_id)
+            if authorization or settings.oidc_lifecycle_sync_confirmed
+            else None
+        )
+    elif subject.startswith("local:"):
+        identity = None
+        epoch = None
+    else:
+        raise HTTPException(401, "Account unavailable")
+    # Recheck local revocations after the external lookup, then account for key usage.
+    with db.lifecycle_lock, db.session.begin() as s:
+        assert_identity_epoch(db, subject, epoch)
+        user = s.get(User, user_id)
+        if not user or not user.active or user.subject != subject:
+            raise HTTPException(401, "Account unavailable")
+        if authorization:
+            key = s.scalar(select(APIKey).where(APIKey.digest == digest(parts[1])))
+            if (
+                not key
+                or key.revoked_at
+                or key.expires_at <= time.time()
+                or key.owner_id != user_id
+            ):
+                raise HTTPException(401, "Invalid or expired API key")
+            key.last_used_at = time.time()
+        else:
+            session = s.get(Session, digest(cookie))
+            if not session or session.expires_at <= time.time() or session.user_id != user_id:
+                raise HTTPException(401, "Session expired")
         return Actor(
             user.id,
             user.name,
-            user.role,
-            user.reviewer,
+            user.role
+            if identity is None or settings.oidc_admin_group_id in identity.groups
+            else "user",
+            user.reviewer
+            and (identity is None or settings.oidc_reviewer_group_id in identity.groups),
             key.id if key else None,
             tuple(key.scopes) if key else (),
+            subject,
+            epoch,
         )
 
 
 async def actor(request: Request):
-    a = authenticate(
+    a = await asyncio.to_thread(
+        authenticate,
         request.app.state.db,
         request.app.state.settings,
         request.headers.get("authorization"),
@@ -124,6 +178,44 @@ async def actor(request: Request):
             raise HTTPException(403, "Same-origin request required")
     request.state.actor = a
     return a
+
+
+def require_api_keys(settings):
+    state = api_keys_state(settings)
+    if state == "disabled":
+        raise HTTPException(503, "API keys are disabled")
+    if state == "identity_unconfigured":
+        raise HTTPException(503, "Identity lifecycle verification unavailable")
+
+
+def api_keys_state(settings):
+    if not settings.api_keys_enabled:
+        return "disabled"
+    if settings.auth_mode == "oidc" and not lifecycle_configured(settings):
+        return "identity_unconfigured"
+    return "available"
+
+
+def ensure_user_current(db, settings, user_id):
+    """Check an identity when there is no session, as in device-code polling."""
+    with db.session() as s:
+        user = s.get(User, user_id)
+        if not user or not user.active:
+            raise HTTPException(401, "Account unavailable")
+        subject = user.subject
+    if settings.auth_mode == "oidc":
+        epoch = identity_epoch(db, subject)
+        check_identity(db, settings, subject, user_id)
+    elif not subject.startswith("local:"):
+        raise HTTPException(401, "Account unavailable")
+    else:
+        epoch = None
+    with db.lifecycle_lock, db.session() as s:
+        assert_identity_epoch(db, subject, epoch)
+        user = s.get(User, user_id)
+        if not user or not user.active or user.subject != subject:
+            raise HTTPException(401, "Account unavailable")
+    return subject, epoch
 
 
 def issue_session(s, user, response, settings):

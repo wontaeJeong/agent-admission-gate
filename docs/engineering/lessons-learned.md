@@ -210,3 +210,33 @@
 - Cause: the served `dist/index.html` still referenced the earlier bundle; the reason it was stale has not been established.
 - Resolution: rebuild, verify the entrypoint references the new bundle, and rerun the browser suite.
 - Prevention: verify the generated entrypoint after rebuilding an integrated branch before using browser-test failures to diagnose source changes.
+
+### Identity lifecycle tests and browser captures (2026-11-02)
+
+- Failure: the existing successful OIDC login test returned 503 after the new lifecycle gate was introduced; its fixture supplied an identity token but no authoritative lifecycle response.
+- Cause and resolution: a valid identity token is not proof of a currently enabled upstream account. The OIDC test now explicitly supplies a mocked lifecycle result, while separate tests exercise missing and unavailable sources.
+- Prevention: update authentication fixtures when adding a new mandatory trust boundary and test both the missing-provider and successful-provider cases.
+- Failure: initial screenshot capture could not connect to a server launched in a different execution session, and an immediate mobile capture caught a responsive transition mid-animation.
+- Resolution and prevention: start the server and browser in the same execution session, wait for readiness, and wait for responsive transitions before capturing each layout. Captures contain only synthetic data.
+
+### Identity revocation review (2026-11-02)
+
+- Failure: review reproduced a credential issued after a concurrent revocation sweep and a device grant exchanged after it expired during provider checks.
+- Cause and resolution: authorization and issuance used separate transactions, and polling reused a timestamp captured before network calls. Single-process revocation generations now guard issuance, and exchange checks expiry again immediately before consumption.
+- Prevention: exercise concurrent deactivation between identity verification and each credential write, and advance the clock across external calls in expiry tests.
+- Failure: a Keycloak gateway 404 or a group moving between paginated reads could be mistaken for an authoritative removal and permanently revoke an active user's credentials.
+- Resolution and prevention: ambiguous results now fail closed without a destructive sweep; the verifier must independently confirm Keycloak access and upstream status, bound to the requested access-group ID. Test gateway errors, moving membership, and independently confirmed removal separately.
+- Failure: an initial browser-test command used a path prefixed with `frontend/` while already running in that directory, so the intended test file was not created.
+- Prevention: resolve paths against the command's actual working directory and check that targeted tests are discovered before interpreting a browser run.
+
+### Noninteractive Git push (2026-11-02)
+
+- Failure: pushing the reviewed branch failed because Git had no noninteractive GitHub credentials available.
+- Resolution: publish the same committed tree using the connected GitHub app instead; no credentials are stored in the repository.
+- Prevention: verify the available authenticated publishing path before relying on command-line push.
+
+### Migration validation scratch database (2026-11-02)
+
+- Failure: a migration-test setup command was rejected because it attempted to remove a fixed temporary database path.
+- Resolution: use a unique new temporary SQLite path for each validation run.
+- Prevention: avoid deleting a pre-existing path as test setup; select an isolated scratch path instead.

@@ -13,6 +13,8 @@ curl "$AAG_URL/api/scans?wait=30" \
 
 기본 비동기 접수는 202, 대기 안에 완료되면 200입니다. 대기 시간이 지나도 작업을 취소하지 않습니다. `GET /api/scans/{id}`, `POST /api/scans/{id}/cancel`, `/export?format=sarif`로 진행 상태·취소·내보내기를 제공합니다.
 
+`AAG_API_KEYS_ENABLED`는 기본 `false`입니다. 운영자가 [SSO 계정·그룹 동기화](../operations/deployment/)를 검증한 후 명시적으로 켜기 전에는 기존 키 사용과 새 키 발급이 차단됩니다.
+
 Remote MCP는 `/mcp/`의 Streamable HTTP이며 `scan`, `get_scan`, `list_scans` 도구를 제공합니다. Bearer API 키가 필요하고 REST와 같은 ScanService를 호출합니다. stdio MCP/로컬 SDK는 이 버전의 공식 인터페이스가 아닙니다.
 
 Device Code Flow는 **서비스 자체 API 키 발급 프로토콜**입니다. OAuth provider의 동적 client registration 구현이 아닙니다.

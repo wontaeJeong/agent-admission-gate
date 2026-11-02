@@ -181,6 +181,7 @@ export default function App() {
       value={{
         user,
         boards: config.boards_enabled,
+        apiKeysState: config.api_keys_state ?? "disabled",
         lang,
         syncDisplayName,
         profileRevision,

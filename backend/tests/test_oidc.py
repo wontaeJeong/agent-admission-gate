@@ -10,15 +10,47 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 
-@pytest.mark.parametrize("invalid", [None, "nonce", "issuer", "audience", "expired", "signature"])
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        None,
+        "unconfigured",
+        "nonce",
+        "issuer",
+        "audience",
+        "expired",
+        "signature",
+        "disabled",
+        "removed",
+        "offline",
+    ],
+)
 def test_oidc_pkce_signature_claims_and_single_use(app, client, monkeypatch, invalid):
-    from aag import routes_identity
+    from aag import identity_lifecycle, routes_identity
+    from fastapi import HTTPException
 
     settings = app.state.settings
     settings.auth_mode = "oidc"
     settings.oidc_issuer = "https://identity.example.test"
     settings.oidc_client_id = "admission-test"
     settings.oidc_admin_subjects = []
+    settings.oidc_access_group_id = "access"
+    settings.oidc_lifecycle_sync_confirmed = invalid != "unconfigured"
+
+    def lifecycle(settings, subject):
+        if invalid == "unconfigured":
+            raise AssertionError("Unconfigured interactive login should remain available")
+        if invalid == "offline":
+            raise HTTPException(503, "Identity lifecycle verification unavailable")
+        return identity_lifecycle.IdentityStatus(
+            invalid != "disabled",
+            frozenset() if invalid == "removed" else frozenset({"access"}),
+            invalid != "removed",
+        )
+
+    monkeypatch.setattr(identity_lifecycle, "lifecycle_configured", lambda settings: True)
+    monkeypatch.setattr(identity_lifecycle, "keycloak_status", lifecycle)
+    monkeypatch.setattr(identity_lifecycle, "upstream_status", lifecycle)
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     wrong = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     flow = {}
@@ -81,8 +113,10 @@ def test_oidc_pkce_signature_claims_and_single_use(app, client, monkeypatch, inv
     assert flow["code_challenge_method"] == ["S256"]
     callback = "/sso/callback?code=test-code&state=" + flow["state"][0]
     response = client.get(callback, follow_redirects=False)
-    assert response.status_code == (401 if invalid else 303)
-    if not invalid:
+    assert response.status_code == (
+        303 if invalid in (None, "unconfigured") else 503 if invalid == "offline" else 401
+    )
+    if invalid in (None, "unconfigured"):
         user = client.get("/api/auth/me").json()
         assert user["name"] == "oidc-user" and user["role"] == "user" and not user["reviewer"]
     assert client.get(callback, follow_redirects=False).status_code == 400
