@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import Integer, case, cast, func, select
 
 from .auth import Actor, actor
+from .job_query import job_scope_filters, utc_window_start
 from .models import Job, Review, Usage
 
 router = APIRouter(prefix="/api")
@@ -26,14 +27,10 @@ def metrics(
         raise HTTPException(403, "Administrator required")
     if scope == "review" and not a.reviewer:
         raise HTTPException(403, "Reviewer required")
-    today = int(time.time() // 86400)
-    cutoff = (today - days + 1) * 86400
-    job_filters = [Job.created_at >= cutoff]
+    cutoff = utc_window_start(days)
+    today = cutoff // 86400 + days - 1
+    job_filters = [Job.created_at >= cutoff, *job_scope_filters(a, scope)]
     usage_filters = [Usage.created_at >= cutoff]
-    if scope == "personal":
-        job_filters.append(Job.owner_id == a.id)
-    if scope == "review":
-        job_filters.append(Job.id.in_(select(Review.job_id)))
     if scope != "all":
         usage_filters.append(Usage.user_id == a.id)
     with request.app.state.db.session() as s:
@@ -141,7 +138,7 @@ def export_usage(
         raise HTTPException(403, "Administrator required")
     if scope == "review" and not a.reviewer:
         raise HTTPException(403, "Reviewer required")
-    cutoff = (int(time.time() // 86400) - days + 1) * 86400
+    cutoff = utc_window_start(days)
     query = select(Usage).where(Usage.created_at >= cutoff).order_by(Usage.created_at.desc())
     if scope != "all":
         query = query.where(Usage.user_id == a.id)
