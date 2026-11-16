@@ -264,3 +264,9 @@
 - Prevention: exercise shared-cookie tabs, open database writer transactions, delayed refresh with a focused row, and independently changed settings rather than only sequential single-tab flows. Regression tests reproduced each material issue before the fix.
 - Integration verification then found that older identity-mocked browser tests made real unauthenticated count requests, triggering the new fail-closed session reconciliation. Their fixtures now supply the count response alongside the mocked identity; real-session notification tests retain the real API.
 - Prevention: when a shared authenticated shell gains a new mandatory read, update identity mocks to model its session consistently and rerun the complete browser suite. Use short traceback output for credential-bearing fixtures so failure diagnostics do not print synthetic token values.
+
+### Browser runner drift (2026-11-16)
+
+- Failure: PR CI could not install Chromium dependencies because `ubuntu-latest` selected Ubuntu 26.04, unsupported by the repository's locked Playwright 1.56.1.
+- Resolution: pin the web job to Ubuntu 24.04, which is present in that Playwright release's dependency manifest; keep the same browser and test versions.
+- Prevention: pin browser-test runner OS versions alongside the Playwright lockfile and review OS support before changing either. Rerun CI rather than bypassing a failed required check.
