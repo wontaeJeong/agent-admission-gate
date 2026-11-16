@@ -270,3 +270,10 @@
 - Failure: PR CI could not install Chromium dependencies because `ubuntu-latest` selected Ubuntu 26.04, unsupported by the repository's locked Playwright 1.56.1.
 - Resolution: pin the web job to Ubuntu 24.04, which is present in that Playwright release's dependency manifest; keep the same browser and test versions.
 - Prevention: pin browser-test runner OS versions alongside the Playwright lockfile and review OS support before changing either. Rerun CI rather than bypassing a failed required check.
+
+### Convenience design contract review (2026-11-16)
+
+- Failure: an initial planning draft combined API-key scan summaries with human-review details, left legacy decisions ambiguous during changes-requested, and omitted the requested snapshot commit from persisted Job fields. Some execution-plan prose also used the wrong language. These were document defects found before implementation or publication.
+- Resolution: restrict review sections to authorized interactive sessions, gate every decision path on workflow state, bind content submissions to the captured account, persist target_commit/rerun_mode, and rewrite the plans in Korean.
+- Prevention: check proposed convenience paths against existing authorization contracts, trace failure retries through stored fields, review transition tables against legacy endpoints, and validate feature coverage, cross-links and document language before publishing a plan.
+
