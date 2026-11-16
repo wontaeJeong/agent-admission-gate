@@ -38,6 +38,7 @@ docker compose up --build
 - **검사:** Git/ZIP, static/full, 비동기 접수와 최대 30초 동기 대기, 동시 실행 제한, 취소, 소스 SHA256 기반 캐시, 강제 재검사, JSON/SARIF 내보내기.
 - **판정:** ALLOW/REVIEW/BLOCK, 원래 판정과 최종 판정 분리, 엔진 누락·실패 시 검토 필요, 동작 범주와 발견 위치·개선 방법.
 - **검토·권한:** user/admin 역할과 독립적인 reviewer 자격, 본인 승인 차단, 사유 필수, 내부 코멘트, 감사 로그, 소스 해시·만료일에 묶인 예외.
+- **알림함:** 검사 완료·실패·취소, 검토 요청·승인·반려, 공개 코멘트의 개인 알림. 상단 벨, 미읽음 배지, 유형 필터, 읽음·보관·복원, 계정별 수신 설정, 90일 보존. [사용 가이드](docs/src/content/docs/guides/notifications.md).
 - **인증·연동:** Keycloak 호환 OIDC + PKCE, HttpOnly 세션, 1회 노출 API 키, 개인/관리자 키 관리, 8자리·10분 Device Code Flow, 90일 키, REST·CLI·Remote MCP.
 - **운영 화면:** 역할별 대시보드, Recharts 차트, 7/14/30/90일, 작업 목록/검색, 상세 8개 탭, 관리자 운영·사용자·전체 키·감사·예외·Action·LLM 화면.
 - **사용량:** REST/MCP HTTP 요청을 별도로 집계하고 이전의 부분 MCP 도구 호출 기록을 구분, 제공자·모델별 토큰, 캐시 토큰, 지연·실패, CSV. MCP HTTP 수집은 이 버전부터 시작하며 HTTP 상태가 도구 성공을 보장하지 않습니다. On-prem/Bedrock/SystemOne 구분; 미보고 토큰·비용은 null.

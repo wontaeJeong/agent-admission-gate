@@ -25,6 +25,9 @@ async function authenticate(page: Page, staff = false) {
   await page.route("**/api/auth/config", (route) =>
     route.fulfill({ json: { mode: "local", boards_enabled: false } }),
   );
+  await page.route("**/api/notifications/unread-count", (route) =>
+    route.fulfill({ json: { unread_count: 0 } }),
+  );
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({
       json: {

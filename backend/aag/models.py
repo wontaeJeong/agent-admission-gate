@@ -1,7 +1,18 @@
 import time
 import uuid
 
-from sqlalchemy import JSON, Boolean, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -127,6 +138,53 @@ class Comment(Base):
     body: Mapped[str] = mapped_column(Text)
     internal: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
+
+
+class NotificationPreference(Base):
+    __tablename__ = "notification_preferences"
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    scans: Mapped[bool] = mapped_column(Boolean, default=True)
+    review_requests: Mapped[bool] = mapped_column(Boolean, default=True)
+    review_results: Mapped[bool] = mapped_column(Boolean, default=True)
+    comments: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class NotificationInbox(Base):
+    __tablename__ = "notification_inboxes"
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    sequence: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
+    recipient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    event_key: Mapped[str] = mapped_column(String(180))
+    sequence: Mapped[int] = mapped_column(BigInteger, default=0)
+    kind: Mapped[str] = mapped_column(String(40))
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
+    review_id: Mapped[str | None] = mapped_column(ForeignKey("reviews.id", ondelete="CASCADE"))
+    verdict: Mapped[str | None] = mapped_column(String(20))
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)
+    read_at: Mapped[float | None] = mapped_column(Float)
+    archived_at: Mapped[float | None] = mapped_column(Float)
+    __table_args__ = (
+        UniqueConstraint("recipient_id", "event_key", name="uq_notification_recipient_event"),
+        Index("ix_notifications_recipient_created", "recipient_id", "created_at", "id"),
+        Index(
+            "ix_notifications_recipient_state",
+            "recipient_id",
+            "archived_at",
+            "read_at",
+            "created_at",
+        ),
+        Index("ix_notifications_created", "created_at"),
+        Index("ix_notifications_recipient_sequence", "recipient_id", "sequence"),
+    )
 
 
 class Post(Base):

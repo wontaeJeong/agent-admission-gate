@@ -19,6 +19,7 @@ from .routes_boards import router as boards_router
 from .routes_identity import oidc_callback
 from .routes_identity import router as identity_router
 from .routes_metrics import router as metrics_router
+from .routes_notifications import router as notifications_router
 from .routes_profile import router as profile_router
 from .routes_scans import router as scans_router
 from .service import ScanService
@@ -164,6 +165,7 @@ def create_app(settings=None):
         metrics_router,
         boards_router,
         profile_router,
+        notifications_router,
     ):
         app.include_router(router)
 

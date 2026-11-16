@@ -129,3 +129,19 @@ def create_local_user(username: str, reviewer: bool = False, admin: bool = False
         s.flush()
         audit(s, None, "user.local_create", user.id, role=user.role, reviewer=reviewer)
     typer.echo("Created " + username)
+
+
+@app.command()
+def prune_notifications(batch_size: int = typer.Option(5000, min=1, max=50000)):
+    """Delete one bounded batch of inbox records older than 90 days (operator DB access)."""
+    from .config import get_settings
+    from .db import Database
+    from .notifications import prune_notifications as prune
+
+    db = Database(get_settings().database_url)
+    try:
+        with db.session.begin() as s:
+            deleted = prune(s, batch_size=batch_size)
+        typer.echo(f"Deleted {deleted} expired notifications")
+    finally:
+        db.engine.dispose()

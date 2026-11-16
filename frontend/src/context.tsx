@@ -7,6 +7,7 @@ export const AppContext = createContext<{
   lang: string;
   syncDisplayName: (ownerId: string, refreshPage: boolean) => void;
   profileRevision: number;
+  reconcileSession: (ownerId?: string) => void;
 }>({
   user: { id: "", name: "", role: "user", reviewer: false },
   boards: false,
@@ -14,6 +15,7 @@ export const AppContext = createContext<{
   lang: "ko",
   syncDisplayName: () => {},
   profileRevision: 0,
+  reconcileSession: () => {},
 });
 export const useApp = () => useContext(AppContext);
 export function useText() {

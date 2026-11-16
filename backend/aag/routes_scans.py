@@ -20,6 +20,7 @@ from .auth import Actor, actor
 from .db import audit, record
 from .job_query import job_scope_filters, utc_window_start
 from .models import Comment, Job, Review, User
+from .notifications import emit_notification
 from .schemas import CommentRequest, Reason, ReviewDecision, ScanRequest
 from .service import TERMINAL, owned_job
 
@@ -216,11 +217,17 @@ def comment_scan(job_id: str, data: CommentRequest, request: Request, a: Actor =
     if data.internal and not a.staff:
         raise HTTPException(403, "Internal comments require staff")
     with request.app.state.db.session.begin() as s:
-        owned_job(s, job_id, a)
+        job = owned_job(s, job_id, a)
         c = Comment(target_type="scan", target_id=job_id, author_id=a.id, **data.model_dump())
         s.add(c)
         s.flush()
         audit(s, a.id, "scan.comment", job_id, internal=data.internal)
+        if not data.internal:
+            review = s.scalar(select(Review).where(Review.job_id == job_id))
+            recipients = {job.owner_id}
+            if review and review.reviewer_id:
+                recipients.add(review.reviewer_id)
+            emit_notification(s, "comment.created", job, recipients - {a.id}, "comment:" + c.id)
         return record(c)
 
 
@@ -240,6 +247,10 @@ def request_review(job_id: str, data: Reason, request: Request, a: Actor = Depen
             s.add(review)
             s.flush()
             audit(s, a.id, "review.request", review.id)
+            reviewers = s.scalars(select(User.id).where(User.reviewer.is_(True)))
+            emit_notification(
+                s, "review.requested", job, reviewers, "review.requested:" + review.id, review.id
+            )
             return record(review)
     except IntegrityError:
         # Another request can win after the duplicate check. Preserve unrelated DB errors.
@@ -327,5 +338,8 @@ def review_decision(
             review_id,
             reason=data.reason,
             original_verdict=job.verdict,
+        )
+        emit_notification(
+            s, "review." + data.decision, job, [r.requester_id], "review.decided:" + r.id, r.id
         )
     return {"ok": True}
