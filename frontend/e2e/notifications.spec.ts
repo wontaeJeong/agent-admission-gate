@@ -676,3 +676,86 @@ test("a real scan creates a persistent inbox item and opens its result", async (
   await expect(page).toHaveURL(new RegExp("/jobs/" + id + "$"));
   await expect(page.locator(".admission-header h2")).toHaveText("ALLOW");
 });
+
+for (const oldOperation of ["read", "preferences"]) {
+  test(`an old notification ${oldOperation} cannot clear new same-account input`, async ({
+    page,
+  }) => {
+    const model = await mockInbox(page);
+    await page.route("**/api/auth/logout", (route) =>
+      route.fulfill({ json: { ok: true } }),
+    );
+    await page.route("**/api/auth/login", (route) =>
+      route.fulfill({ json: { ok: true } }),
+    );
+    let release!: () => void;
+    let started = false;
+    const delayed = new Promise<void>((done) => {
+      release = done;
+    });
+    const path =
+      oldOperation === "read"
+        ? "**/api/notifications/scan-alert"
+        : "**/api/notification-preferences";
+    await page.route(path, async (route) => {
+      if (route.request().method() === "GET") return route.fallback();
+      started = true;
+      await delayed;
+      await route.fulfill({
+        json:
+          oldOperation === "read"
+            ? { ...examples()[1], read_at: now }
+            : model.preferences,
+      });
+    });
+    await page.goto(
+      "/notifications" +
+        (oldOperation === "preferences" ? "?view=settings" : ""),
+    );
+    if (oldOperation === "read") {
+      await page
+        .locator(".notification-row")
+        .filter({ hasText: "Scan completed" })
+        .getByRole("link")
+        .click();
+    } else {
+      await page.getByLabel("Scan updates").uncheck();
+      await page
+        .getByRole("button", { name: "Save notification settings" })
+        .click();
+    }
+    await expect.poll(() => started).toBe(true);
+    await page.getByRole("button", { name: /Account menu/ }).click();
+    await page.getByRole("menuitem", { name: "Sign out" }).click();
+    await page.getByLabel("Username").fill(model.account);
+    await page.getByLabel("Password").fill("test-password-long");
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page.getByRole("tab", { name: "Settings", exact: true }).click();
+    await page.getByRole("checkbox", { name: /Comments/ }).uncheck();
+    const response = page.waitForResponse(
+      (r) =>
+        r
+          .url()
+          .includes(
+            oldOperation === "read"
+              ? "/notifications/scan-alert"
+              : "/notification-preferences",
+          ) && r.request().method() !== "GET",
+    );
+    release();
+    await response;
+    // Any erroneous reconciliation remounts the form and restores this checkbox.
+    await page.evaluate(
+      () =>
+        new Promise((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(done)),
+        ),
+    );
+    await expect(
+      page.getByRole("checkbox", { name: /Comments/ }),
+    ).not.toBeChecked();
+    await expect(
+      page.getByRole("button", { name: "Save notification settings" }),
+    ).toBeEnabled();
+  });
+}

@@ -124,3 +124,31 @@ it("broadcasts changed observed accounts once and keeps repeated reads quiet", a
   expect(values.get("aag-auth-change")).not.toBe(firstEvent);
   expect(values.get("aag-auth-observed-account")).toBe("bob");
 });
+
+it.each([
+  [new Error("Unexpected"), "GET", null, false],
+  [new TypeError("Failed to fetch"), "GET", null, true],
+  [new TypeError("Failed to fetch"), "POST", null, false],
+])(
+  "offers connection recovery only for a failed GET (%s, %s)",
+  async (error, method, status, retryable) => {
+    const { requestRecovery } = await import("./api");
+    expect(requestRecovery(error, method)).toEqual({ status, retryable });
+  },
+);
+it.each([
+  [403, "GET", false],
+  [503, "GET", true],
+  [503, "POST", false],
+])(
+  "preserves HTTP %i and limits retry to reads (%s)",
+  async (status, method, retryable) => {
+    const { APIError, requestRecovery } = await import("./api");
+    expect(
+      requestRecovery(
+        new APIError(status as number, "Unavailable"),
+        method as string,
+      ),
+    ).toEqual({ status, retryable });
+  },
+);

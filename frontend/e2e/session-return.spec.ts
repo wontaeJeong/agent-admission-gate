@@ -236,8 +236,8 @@ test("a second tab changes account and rejects an old open form without a databa
   await expect(page.getByLabel("표시 이름")).toHaveValue("");
 });
 
-for (const status of [403, 503]) {
-  test(`HTTP ${status} keeps the authenticated account and allows read retry`, async ({
+for (const failure of [403, 503, "network"] as const) {
+  test(`read ${failure} offers recovery controls without signing out`, async ({
     page,
   }) => {
     await page.goto(oidcOrigin + "/settings");
@@ -245,12 +245,19 @@ for (const status of [403, 503]) {
     await expect(
       page.getByRole("button", { name: "계정 메뉴: alice" }),
     ).toBeVisible();
-    await page.route("**/api/scans?**", (route) =>
-      route.fulfill({ status, json: { detail: `Synthetic HTTP ${status}` } }),
-    );
+    let reads = 0;
+    await page.route("**/api/scans?**", (route) => {
+      reads++;
+      return failure === "network"
+        ? route.abort("failed")
+        : route.fulfill({
+            status: failure,
+            json: { detail: `Synthetic HTTP ${failure}` },
+          });
+    });
     await page.getByRole("link", { name: "작업 목록", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText(
-      `Synthetic HTTP ${status}`,
+      failure === "network" ? "Failed to fetch" : `Synthetic HTTP ${failure}`,
     );
     await expect(
       page.getByRole("button", { name: "계정 메뉴: alice" }),
@@ -258,12 +265,102 @@ for (const status of [403, 503]) {
     await expect(
       page.getByRole("alert").filter({ hasText: "세션이 만료" }),
     ).toHaveCount(0);
+    if (failure === 403) {
+      await expect(page.getByRole("alert")).toContainText(
+        "권한이 변경되었거나",
+      );
+      await expect(
+        page.getByRole("button", { name: "다시 시도", exact: true }),
+      ).toHaveCount(0);
+    } else {
+      await expect(
+        page.getByRole("button", { name: "다시 시도", exact: true }),
+      ).toBeVisible();
+    }
+    if (failure !== "network") {
+      await page.screenshot({
+        path: resolve(evidence, `read-${failure}-desktop-dark.png`),
+        fullPage: true,
+      });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await expect
+        .poll(async () => {
+          const bounds = await page.locator(".sidebar").boundingBox();
+          return bounds ? bounds.x + bounds.width : 0;
+        })
+        .toBeLessThanOrEqual(0);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth > innerWidth,
+        ),
+      ).toBe(false);
+      await page.screenshot({
+        path: resolve(evidence, `read-${failure}-mobile-dark.png`),
+        fullPage: true,
+      });
+    }
     await page.unroute("**/api/scans?**");
-    await page.getByRole("link", { name: "새 검사 실행" }).click();
-    await page.getByRole("link", { name: "작업 목록", exact: true }).click();
-    await expect(
-      page.getByRole("heading", { name: "작업 목록", exact: true }),
-    ).toBeVisible();
-    await expect(page.getByRole("alert")).toHaveCount(0);
+    if (failure === 403) {
+      await page.getByRole("link", { name: "대시보드로 이동" }).click();
+      await expect(page).toHaveURL(oidcOrigin + "/");
+      await expect(
+        page.getByRole("heading", { name: "검사 현황" }),
+      ).toBeVisible();
+    } else {
+      const recovered = page.waitForResponse(
+        (response) =>
+          response.url().includes("/api/scans?") && response.status() === 200,
+      );
+      await page
+        .getByRole("button", { name: "다시 시도", exact: true })
+        .click();
+      await recovered;
+      await expect(page.getByRole("alert")).toHaveCount(0);
+      await expect(page).toHaveURL(oidcOrigin + "/jobs");
+      expect(reads).toBe(1);
+    }
   });
 }
+
+test("retrying a failed read never replays an unsuccessful mutation", async ({
+  page,
+}) => {
+  await page.goto(oidcOrigin + "/settings");
+  await page.getByRole("link", { name: "SSO로 로그인" }).click();
+  let mutations = 0;
+  await page.route("**/api/profile", (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    mutations++;
+    return route.fulfill({
+      status: 503,
+      json: { detail: "Synthetic save unavailable" },
+    });
+  });
+  await page.getByLabel("표시 이름").fill("Unsent value");
+  await page.getByRole("button", { name: "변경 사항 저장" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Synthetic save unavailable",
+  );
+  await expect(
+    page.getByRole("button", { name: "다시 시도", exact: true }),
+  ).toHaveCount(0);
+  await page.route("**/api/scans?**", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { detail: "Synthetic read unavailable" },
+    }),
+  );
+  await page.getByRole("link", { name: "작업 목록", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Synthetic read unavailable",
+  );
+  await page.unroute("**/api/scans?**");
+  const recovered = page.waitForResponse(
+    (response) =>
+      response.url().includes("/api/scans?") && response.status() === 200,
+  );
+  await page.getByRole("button", { name: "다시 시도", exact: true }).click();
+  await recovered;
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(mutations).toBe(1);
+});

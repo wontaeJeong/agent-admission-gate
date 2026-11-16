@@ -8,6 +8,16 @@ export class APIError extends Error {
     super(message);
   }
 }
+/** Read recovery never gives a write request a replay action. */
+export function requestRecovery(error: unknown, method: string) {
+  return {
+    status: error instanceof APIError ? error.status : null,
+    retryable:
+      method.toUpperCase() === "GET" &&
+      (error instanceof TypeError ||
+        (error instanceof APIError && error.status === 503)),
+  };
+}
 export async function api<T = any>(
   path: string,
   init: RequestInit = {},
