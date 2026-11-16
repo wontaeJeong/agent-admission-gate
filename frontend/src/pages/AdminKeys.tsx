@@ -1,5 +1,6 @@
+import { useAccountMutation } from "../accountMutations";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { send, timestamp } from "../api";
+import { timestamp } from "../api";
 import {
   Badge,
   Empty,
@@ -207,6 +208,7 @@ export function AdminKeys() {
 }
 
 function AdminKeyDetail({ id, onBack }: { id: string; onBack: () => void }) {
+  const send = useAccountMutation();
   const t = useText(),
     [usagePage, setUsagePage] = useState(1),
     [auditPage, setAuditPage] = useState(1),

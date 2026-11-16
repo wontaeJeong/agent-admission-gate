@@ -1,5 +1,20 @@
 import { expect, test } from "@playwright/test";
 
+// Both scenarios provide a synthetic identity; its shared profile read must
+// belong to the same synthetic session rather than the unauthenticated API.
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/profile", (route) =>
+    route.fulfill({
+      json: {
+        account_name: "Test account",
+        display_name: null,
+        role: "user",
+        reviewer: false,
+      },
+    }),
+  );
+});
+
 test("a requester can find their own review without reviewer permissions", async ({
   page,
 }) => {

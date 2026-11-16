@@ -173,6 +173,9 @@ async def actor(request: Request):
         request.cookies.get("aag_session"),
     )
     if not a.key_id and request.method not in {"GET", "HEAD", "OPTIONS"}:
+        expected_account = request.headers.get("x-aag-account")
+        if expected_account is not None and expected_account != a.id:
+            raise HTTPException(409, "Account changed; reopen the form before submitting")
         # Cookie credentials require same-origin requests; API keys use explicit Bearer auth.
         if request.headers.get("origin") != request.app.state.settings.public_url.rstrip("/"):
             raise HTTPException(403, "Same-origin request required")

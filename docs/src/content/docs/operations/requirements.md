@@ -14,6 +14,7 @@ title: 요구사항 추적과 검증 범위
 | ALLOW/REVIEW/BLOCK + Action | policy.py, findings/action UI | critical block, incomplete review, model downgrade 금지 |
 | 온프렘·Bedrock·SystemOne | llm.py | provider contract fixture, usage 결측/실패; 실 계정 별도 |
 | Keycloak/SSO | routes_identity.py + identity_lifecycle.py | PKCE·서명·nonce/issuer/audience·만료·재사용 및 비활성/그룹 제거·장애 시 차단 테스트(모의 계약); 실제 Keycloak/상위 IdP 동기화·verifier 연결은 배포자 검증 필수 |
+| 로그인 복귀·세션 만료·계정 바인딩 (A1) | return_paths.py, OIDCState.return_to, App.tsx, session.tsx, api.ts | test_return_paths/test_session_return: SSO·로컬 로그인 뒤 검증된 pathname/query 복귀, callback 목적지는 저장 state만 참조; test_account_bound_mutations: 이전 폼 계정과 새 쿠키 계정 불일치 409·쓰기 없음; session 단위/session-return E2E: 만료 전 flush·중복 401 병합·늦은 응답 폐기·403 권한 변경 안내·대시보드 복귀, GET 503/연결 오류의 명시적 재시도·mutation 미재전송·로그인 유지·두 탭 격리. 임의 발견 선택 연결은 E1에서 완료하며 실제 IdP 연결 검증은 별도 |
 | user/admin + reviewer 직교 | auth.py + 모든 router | owner isolation, reviewer/admin, 비활성 사용자, last admin |
 | 1회 노출·90일 API 키 | APIKey, 개인/관리자 화면 | 해시 보관·만료·폐기·scope ceiling |
 | 8자리/10분 Device Code | DeviceClient/Grant | 승인/거절·poll interval·한 번 교환·만료·교환 시 사용자 확인; API 키 기본 비활성 |

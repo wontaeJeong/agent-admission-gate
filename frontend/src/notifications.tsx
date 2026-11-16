@@ -20,6 +20,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, APIError, timestamp } from "./api";
 import { ErrorMessage, State } from "./components";
 import { useApp, useText } from "./context";
+import { sessionCoordinator } from "./session";
 
 export type Notification = {
   id: string;
@@ -48,13 +49,18 @@ export function useNotificationApi(): NotificationAPI {
   const { user, reconcileSession } = useApp();
   return useCallback(
     async <T,>(path: string, init: RequestInit = {}) => {
+      const capture = sessionCoordinator.capture();
       try {
         return await api<T>(path, {
           ...init,
           headers: { ...init.headers, "X-AAG-Account": user.id },
         });
       } catch (e) {
-        if (e instanceof APIError && (e.status === 401 || e.status === 409))
+        if (
+          sessionCoordinator.isCurrent(capture) &&
+          e instanceof APIError &&
+          e.status === 409
+        )
           reconcileSession(user.id);
         throw e;
       }

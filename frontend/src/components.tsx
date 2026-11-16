@@ -3,10 +3,16 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { AlertCircle, Check, Copy, LoaderCircle } from "lucide-react";
-import { api } from "./api";
+import { api, requestRecovery } from "./api";
+import { Link } from "react-router-dom";
 import { useText } from "./context";
 
 export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
+  const [attempt, setAttempt] = useState(0);
+  const [recovery, setRecovery] = useState({
+    status: null as number | null,
+    retryable: false,
+  });
   const [data, setData] = useState<T | null>(null),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
@@ -22,8 +28,10 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
           setError("");
         }
       } catch (e) {
-        if (live && !(e instanceof DOMException && e.name === "AbortError"))
+        if (live && !(e instanceof DOMException && e.name === "AbortError")) {
           setError((e as Error).message);
+          setRecovery(requestRecovery(e, "GET"));
+        }
       } finally {
         if (live) {
           setLoading(false);
@@ -34,22 +42,78 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
     setLoading(true);
     setData(null);
     setError("");
+    setRecovery({ status: null, retryable: false });
     void run();
     return () => {
       live = false;
       abort.abort();
       clearTimeout(timer);
     };
-  }, [path, refresh, poll]);
-  return { data, error, loading };
+  }, [path, refresh, poll, attempt]);
+  return {
+    data,
+    error,
+    loading,
+    errorStatus: recovery.status,
+    retryable: recovery.retryable,
+    retry: () => setAttempt((value) => value + 1),
+  };
+}
+type ReadFailureProps = {
+  error?: string;
+  errorStatus?: number | null;
+  retryable?: boolean;
+  retry?: () => void;
+};
+export function ReadError({
+  error,
+  errorStatus,
+  retryable,
+  retry,
+}: ReadFailureProps) {
+  const t = useText();
+  if (!error) return null;
+  return (
+    <div className="error" role="alert">
+      <AlertCircle size={18} />
+      <div>
+        {error}
+        {errorStatus === 403 && (
+          <>
+            <p>
+              {t(
+                "권한이 변경되었거나 이 화면에 접근할 수 없습니다. 현재 계정의 대시보드로 이동하세요.",
+                "Your access may have changed or this page is unavailable to your account. Go to your account's dashboard.",
+              )}
+            </p>
+            <Link className="button" to="/">
+              {t("대시보드로 이동", "Go to dashboard")}
+            </Link>
+          </>
+        )}
+        {retryable && retry && (
+          <>
+            <p>
+              {t(
+                "연결 또는 서비스 문제로 내용을 불러오지 못했습니다. 읽기 요청만 다시 시도합니다.",
+                "A connection or service problem prevented loading. Only this read request will be retried.",
+              )}
+            </p>
+            <button type="button" onClick={retry}>
+              {t("다시 시도", "Retry")}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 export function State({
   loading,
-  error,
   children,
-}: {
+  ...failure
+}: ReadFailureProps & {
   loading?: boolean;
-  error?: string;
   children: ReactNode;
 }) {
   const t = useText();
@@ -60,13 +124,7 @@ export function State({
         {t("불러오는 중…", "Loading…")}
       </div>
     );
-  if (error)
-    return (
-      <div className="error" role="alert">
-        <AlertCircle size={18} />
-        {error}
-      </div>
-    );
+  if (failure.error) return <ReadError {...failure} />;
   return <>{children}</>;
 }
 export function Empty({ children }: { children: ReactNode }) {

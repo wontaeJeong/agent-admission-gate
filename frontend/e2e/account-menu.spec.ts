@@ -4,9 +4,11 @@ test("account menu offers theme and settings with keyboard access", async ({
   page,
 }) => {
   await page.goto("/login");
-  await page.getByLabel("사용자명").fill("admin");
-  await page.getByLabel("비밀번호").fill("test-password-long");
-  await page.getByRole("button", { name: "로그인", exact: true }).click();
+  await page.getByLabel(/사용자명|Username/).fill("admin");
+  await page.getByLabel(/비밀번호|Password/).fill("test-password-long");
+  await page
+    .getByRole("button", { name: /^(로그인|Sign in)$/, exact: true })
+    .click();
   const trigger = page.getByRole("button", { name: /계정 메뉴/ });
   await expect(trigger).toBeVisible();
   await trigger.focus();

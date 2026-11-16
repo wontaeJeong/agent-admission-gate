@@ -37,8 +37,10 @@ import {
   Unplug,
   UserRound,
 } from "lucide-react";
-import { api, send, type User } from "./api";
+import { api, APIError, send, sendAsAccount, type User } from "./api";
 import { Brand, syncFavicon } from "./Brand";
+import { sessionCoordinator, publishAccountObservation } from "./session";
+import { normalizeReturnTo } from "./returnPaths";
 import { AppContext } from "./context";
 import { ErrorMessage, State } from "./components";
 import { Landing } from "./pages/Landing";
@@ -101,6 +103,7 @@ export default function App() {
     [config, setConfig] = useState<any>(null),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [displayName, setDisplayNameState] = useState<string | null>(null);
   const profileGeneration = useRef(0);
   const currentUserId = useRef<string | null>(null);
@@ -109,13 +112,22 @@ export default function App() {
   const reconcileSession = useCallback((ownerId?: string) => {
     if (ownerId && currentUserId.current !== ownerId) return;
     const generation = ++sessionGeneration.current;
+    sessionCoordinator.invalidate();
     setUser(null);
     setLoading(true);
     setError("");
-    Promise.all([api("/auth/config"), api<User>("/auth/me").catch(() => null)])
+    Promise.all([
+      api("/auth/config"),
+      api<User>("/auth/me").catch((e) => {
+        if (e instanceof APIError && e.status === 401) return null;
+        throw e;
+      }),
+    ])
       .then(([config, current]) => {
         if (sessionGeneration.current !== generation) return;
         setConfig(config);
+        sessionCoordinator.setAccount(current?.id ?? null);
+        publishAccountObservation(current?.id ?? null);
         setUser(current);
       })
       .catch((e) => {
@@ -126,6 +138,18 @@ export default function App() {
         if (sessionGeneration.current === generation) setLoading(false);
       });
   }, []);
+  useEffect(
+    () =>
+      sessionCoordinator.subscribe(() => {
+        sessionGeneration.current++;
+        sessionCoordinator.setAccount(null);
+        publishAccountObservation(null);
+        setUser(null);
+        setSessionExpired(true);
+        setLoading(false);
+      }),
+    [],
+  );
   useEffect(() => {
     const changed = (event: StorageEvent) => {
       if (event.key === "aag-auth-change") reconcileSession();
@@ -191,12 +215,20 @@ export default function App() {
       profileGeneration.current++;
     };
   }, [user?.id]);
+  const returnTo = normalizeReturnTo(
+    location.pathname === "/login"
+      ? new URLSearchParams(location.search).get("return_to")
+      : location.pathname + location.search,
+  );
   const refresh = async () => {
     const current = await api<User>("/auth/me");
     sessionGeneration.current++;
+    sessionCoordinator.invalidate();
+    sessionCoordinator.setAccount(current.id);
+    setSessionExpired(false);
     setUser(current);
-    localStorage.setItem("aag-auth-change", crypto.randomUUID());
-    if (location.pathname === "/login") navigate("/");
+    publishAccountObservation(current.id);
+    navigate(returnTo, { replace: true });
   };
   if (loading || error)
     return (
@@ -205,10 +237,17 @@ export default function App() {
       </State>
     );
   if (!user)
-    return location.pathname === "/" || location.pathname === "/about" ? (
+    return !sessionExpired &&
+      (location.pathname === "/" || location.pathname === "/about") ? (
       <Landing mode={config?.mode ?? "oidc"} />
     ) : (
-      <Login mode={config?.mode} onLogin={refresh} />
+      <Login
+        mode={config?.mode}
+        onLogin={refresh}
+        returnTo={returnTo}
+        expired={sessionExpired}
+        lang={lang}
+      />
     );
   return (
     <AppContext.Provider
@@ -400,13 +439,12 @@ export default function App() {
                     <DropdownMenu.Item
                       className="account-item"
                       onSelect={async () => {
-                        await send("/auth/logout", {});
+                        await sendAsAccount("/auth/logout", {}, user.id);
+                        sessionCoordinator.setAccount(null);
+                        setSessionExpired(false);
                         setUser(null);
                         sessionGeneration.current++;
-                        localStorage.setItem(
-                          "aag-auth-change",
-                          crypto.randomUUID(),
-                        );
+                        publishAccountObservation(null);
                       }}
                     >
                       <LogOut size={16} />
@@ -520,10 +558,17 @@ export default function App() {
 function Login({
   mode,
   onLogin,
+  returnTo,
+  expired,
+  lang,
 }: {
   mode: string;
+  returnTo: string;
+  expired: boolean;
+  lang: string;
   onLogin: () => Promise<void>;
 }) {
+  const t = (ko: string, en: string) => (lang === "ko" ? ko : en);
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) {
@@ -546,30 +591,40 @@ function Login({
     <div className="login-page">
       <div className="login-panel">
         <Brand />
-        <div className="eyebrow">EVIDENCE BEFORE ADMISSION</div>
-        <h1>
-          신뢰할 수 있는
-          <br />
-          에이전트의 시작.
-        </h1>
+        <h1>{t("로그인", "Sign in")}</h1>
         <p>
-          소스와 위험을 확인하고, 근거를 남기고,
-          <br />
-          검증된 도구를 업무에 연결하세요.
+          {t(
+            "인증 후 요청한 화면으로 돌아갑니다.",
+            "Return to the requested page after signing in.",
+          )}
         </p>
+        {expired && (
+          <div className="notice" role="alert">
+            {t(
+              "세션이 만료되었습니다. 다시 로그인하세요. 제출은 자동으로 재시도되지 않습니다.",
+              "Your session expired. Sign in again. Submissions are not retried automatically.",
+            )}
+          </div>
+        )}
         <ErrorMessage value={error} />
         {mode === "oidc" ? (
-          <a className="primary" href="/api/auth/oidc/login">
-            SSO로 로그인
+          <a
+            className="primary"
+            href={
+              "/api/auth/oidc/login?return_to=" + encodeURIComponent(returnTo)
+            }
+            onClick={() => sessionCoordinator.flush()}
+          >
+            {t("SSO로 로그인", "Sign in with SSO")}
           </a>
         ) : (
           <form onSubmit={submit}>
             <label>
-              사용자명
+              {t("사용자명", "Username")}
               <input name="username" autoComplete="username" required />
             </label>
             <label>
-              비밀번호
+              {t("비밀번호", "Password")}
               <input
                 name="password"
                 type="password"
@@ -578,18 +633,19 @@ function Login({
               />
             </label>
             <button className="primary" disabled={busy}>
-              {busy ? "로그인 중…" : "로그인"}
+              {busy ? t("로그인 중…", "Signing in…") : t("로그인", "Sign in")}
             </button>
-            <small>로컬 개발 계정 · 운영 환경은 SSO를 사용합니다.</small>
+            <small>
+              {t(
+                "로컬 개발 계정 · 운영 환경은 SSO를 사용합니다.",
+                "Local development account. Production uses SSO.",
+              )}
+            </small>
           </form>
         )}
-        <div className="login-foot">
-          Agent Admission Gate · Independent security tooling
-        </div>
       </div>
       <div className="login-art" aria-hidden="true">
         <Brand compact />
-        <span>Inspect. Understand. Admit.</span>
       </div>
     </div>
   );

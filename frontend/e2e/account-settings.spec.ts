@@ -1,12 +1,24 @@
 import { expect, test } from "@playwright/test";
 
+// The account-race scenarios mock /auth/me and /profile; navigation must keep
+// that synthetic session rather than reaching an unauthenticated live API.
+test.beforeEach(async ({ page }) => {
+  await page.route("**/api/scans?**", (route) =>
+    route.fulfill({
+      json: { items: [], total: 0, page: 1, page_size: 25 },
+    }),
+  );
+});
+
 test("edit and reset a personal display name without changing account identity", async ({
   page,
 }) => {
   await page.goto("/login");
-  await page.getByLabel("사용자명").fill("admin");
-  await page.getByLabel("비밀번호").fill("test-password-long");
-  await page.getByRole("button", { name: "로그인", exact: true }).click();
+  await page.getByLabel(/사용자명|Username/).fill("admin");
+  await page.getByLabel(/비밀번호|Password/).fill("test-password-long");
+  await page
+    .getByRole("button", { name: /^(로그인|Sign in)$/, exact: true })
+    .click();
   await page.getByRole("button", { name: /계정 메뉴/ }).click();
   await page.getByRole("menuitem", { name: "사용자 설정" }).click();
   await expect(page).toHaveURL(/\/settings$/);
@@ -53,7 +65,7 @@ test("edit and reset a personal display name without changing account identity",
 });
 
 for (const nextAccount of ["second", "first"]) {
-  test(`late save refreshes only its owner after ${nextAccount} signs in`, async ({
+  test(`late save is discarded after ${nextAccount} starts a new session generation`, async ({
     page,
   }) => {
     let account = "first";
@@ -105,9 +117,11 @@ for (const nextAccount of ["second", "first"]) {
     await expect(page.getByLabel("표시 이름")).toBeDisabled();
     await page.getByRole("button", { name: /계정 메뉴/ }).click();
     await page.getByRole("menuitem", { name: "로그아웃" }).click();
-    await page.getByLabel("사용자명").fill(nextAccount);
-    await page.getByLabel("비밀번호").fill("test-password-long");
-    await page.getByRole("button", { name: "로그인", exact: true }).click();
+    await page.getByLabel(/사용자명|Username/).fill(nextAccount);
+    await page.getByLabel(/비밀번호|Password/).fill("test-password-long");
+    await page
+      .getByRole("button", { name: /^(로그인|Sign in)$/, exact: true })
+      .click();
     await expect(
       page.getByRole("button", { name: `계정 메뉴: ${nextAccount}` }),
     ).toBeVisible();
@@ -125,7 +139,7 @@ for (const nextAccount of ["second", "first"]) {
     );
     await expect(
       page.getByRole("button", {
-        name: `계정 메뉴: ${nextAccount === "first" ? "first nickname" : "second"}`,
+        name: `계정 메뉴: ${nextAccount}`,
       }),
     ).toBeVisible();
   });

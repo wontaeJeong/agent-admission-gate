@@ -1,3 +1,4 @@
+import { useAccountMutation } from "../accountMutations";
 import { useState, type FormEvent } from "react";
 import {
   Link,
@@ -18,7 +19,6 @@ import {
   APIError,
   api,
   number,
-  send,
   timestamp,
   type Finding,
   type Job,
@@ -223,6 +223,7 @@ export function Jobs() {
   );
 }
 export function NewScan() {
+  const send = useAccountMutation();
   const t = useText(),
     navigate = useNavigate();
   const [type, setType] = useState("git"),
@@ -249,7 +250,7 @@ export function NewScan() {
         });
       } else {
         data.set("force_rescan", String(data.has("force")));
-        result = await api("/scans/upload", { method: "POST", body: data });
+        result = await send("/scans/upload", data);
       }
       navigate("/jobs/" + result.id);
     } catch (e) {
@@ -415,6 +416,7 @@ export function NewScan() {
   );
 }
 export function JobDetail() {
+  const send = useAccountMutation();
   const { id } = useParams(),
     [params, setParams] = useSearchParams(),
     [refresh, setRefresh] = useState(0),
@@ -889,6 +891,7 @@ export function Findings({ findings }: { findings: Finding[] }) {
   );
 }
 export function Comments({ endpoint }: { endpoint: string }) {
+  const send = useAccountMutation();
   const [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api";
+import { useAccountMutation } from "../accountMutations";
 import { ErrorMessage, PageTitle, State, useLoad } from "../components";
 import { useApp, useText } from "../context";
 
@@ -44,6 +44,7 @@ function ProfileForm({
   profile: Profile;
   onReload: () => void;
 }) {
+  const send = useAccountMutation();
   const t = useText(),
     { user, syncDisplayName, profileRevision } = useApp();
   const [acknowledgedRevision, setAcknowledgedRevision] =
@@ -67,10 +68,11 @@ function ProfileForm({
     setError("");
     setMessage("");
     try {
-      const updated = await api<Profile>("/profile", {
-        method: "PUT",
-        body: JSON.stringify({ display_name: value }),
-      });
+      const updated = await send<Profile>(
+        "/profile",
+        { display_name: value },
+        "PUT",
+      );
       syncDisplayName(user.id, !active.current);
       if (!active.current) return;
       setName(updated.display_name || "");
