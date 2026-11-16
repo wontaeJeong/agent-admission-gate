@@ -1,6 +1,7 @@
+import { useAccountMutation } from "../accountMutations";
 import { useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { send, timestamp } from "../api";
+import { timestamp } from "../api";
 import {
   Badge,
   Empty,
@@ -120,6 +121,7 @@ export function Reviews() {
   );
 }
 export function ReviewDetail() {
+  const send = useAccountMutation();
   const { id } = useParams(),
     [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),

@@ -21,6 +21,16 @@ const job = {
 };
 
 async function authenticate(page: Page, staff = false) {
+  await page.route("**/api/profile", (route) =>
+    route.fulfill({
+      json: {
+        account_name: staff ? "Test reviewer" : "Test requester",
+        display_name: null,
+        role: "user",
+        reviewer: staff,
+      },
+    }),
+  );
   await page.addInitScript(() => localStorage.setItem("aag-lang", "en"));
   await page.route("**/api/auth/config", (route) =>
     route.fulfill({ json: { mode: "local", boards_enabled: false } }),

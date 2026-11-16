@@ -212,6 +212,13 @@ test("bell preview preserves unread state until opening and links to the inbox",
   page,
 }) => {
   const model = await mockInbox(page);
+  // This scenario tests the link/read transition, including a removed target.
+  await page.route("**/api/scans/example", (route) =>
+    route.fulfill({
+      status: 404,
+      json: { detail: "Synthetic scan unavailable" },
+    }),
+  );
   await page.goto("/notifications");
   await expect(page.locator(".notification-row")).toHaveCount(4);
   const bell = page.getByRole("button", { name: "Notifications, 3 unread" });
@@ -456,9 +463,11 @@ test("a late read response cannot navigate or populate another account's inbox",
   await expect.poll(() => !!releaseRead).toBe(true);
   await page.getByRole("button", { name: /Account menu/ }).click();
   await page.getByRole("menuitem", { name: "Sign out" }).click();
-  await page.getByLabel("사용자명").fill("second");
-  await page.getByLabel("비밀번호").fill("test-password-long");
-  await page.getByRole("button", { name: "로그인", exact: true }).click();
+  await page.getByLabel(/사용자명|Username/).fill("second");
+  await page.getByLabel(/비밀번호|Password/).fill("test-password-long");
+  await page
+    .getByRole("button", { name: /^(로그인|Sign in)$/, exact: true })
+    .click();
   await expect(
     page.getByRole("button", { name: "Notifications, 0 unread" }),
   ).toBeVisible();
@@ -623,9 +632,11 @@ test("a real scan creates a persistent inbox item and opens its result", async (
   page,
 }) => {
   await page.goto("/login");
-  await page.getByLabel("사용자명").fill("admin");
-  await page.getByLabel("비밀번호").fill("test-password-long");
-  await page.getByRole("button", { name: "로그인", exact: true }).click();
+  await page.getByLabel(/사용자명|Username/).fill("admin");
+  await page.getByLabel(/비밀번호|Password/).fill("test-password-long");
+  await page
+    .getByRole("button", { name: /^(로그인|Sign in)$/, exact: true })
+    .click();
   await expect(page.getByRole("heading", { name: "검사 현황" })).toBeVisible();
   const accountId = (await (await page.request.get("/api/auth/me")).json()).id;
   await page.request.put("/api/notification-preferences", {

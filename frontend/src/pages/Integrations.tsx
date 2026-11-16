@@ -1,3 +1,4 @@
+import { useAccountMutation } from "../accountMutations";
 import { useState, type FormEvent } from "react";
 import {
   CopyButton,
@@ -10,7 +11,7 @@ import {
   Tabs,
   useLoad,
 } from "../components";
-import { api, send, timestamp } from "../api";
+import { api, timestamp } from "../api";
 import { useApp, useText } from "../context";
 
 function KeysUnavailable() {
@@ -34,6 +35,7 @@ function KeysUnavailable() {
 }
 
 export function Keys({ admin = false }: { admin?: boolean }) {
+  const send = useAccountMutation();
   const { apiKeysState } = useApp();
   const [refresh, setRefresh] = useState(0),
     [token, setToken] = useState(""),
@@ -253,6 +255,7 @@ export function Keys({ admin = false }: { admin?: boolean }) {
   );
 }
 export function Devices() {
+  const send = useAccountMutation();
   const { apiKeysState } = useApp();
   const [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
@@ -437,9 +440,11 @@ export function Devices() {
                         )
                       ) {
                         try {
-                          await api("/device-clients/" + c.id, {
-                            method: "DELETE",
-                          });
+                          await send(
+                            "/device-clients/" + c.id,
+                            undefined,
+                            "DELETE",
+                          );
                           setRefresh((x) => x + 1);
                         } catch (e) {
                           setError((e as Error).message);

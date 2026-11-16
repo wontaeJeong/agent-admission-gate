@@ -54,7 +54,7 @@ export function useNotificationApi(): NotificationAPI {
           headers: { ...init.headers, "X-AAG-Account": user.id },
         });
       } catch (e) {
-        if (e instanceof APIError && (e.status === 401 || e.status === 409))
+        if (e instanceof APIError && e.status === 409)
           reconcileSession(user.id);
         throw e;
       }

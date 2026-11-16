@@ -1,3 +1,4 @@
+import { useAccountMutation } from "../accountMutations";
 import { useState, type FormEvent } from "react";
 import {
   Link,
@@ -5,7 +6,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { send, timestamp } from "../api";
+import { timestamp } from "../api";
 import {
   Badge,
   Empty,
@@ -119,6 +120,7 @@ export function Boards() {
   );
 }
 export function PostDetail() {
+  const send = useAccountMutation();
   const { id } = useParams(),
     [refresh, setRefresh] = useState(0),
     [edit, setEdit] = useState(false),
@@ -195,6 +197,7 @@ function Editor({
   original?: any;
   onSave: (p: any) => void;
 }) {
+  const send = useAccountMutation();
   const [body, setBody] = useState(original?.body || ""),
     [preview, setPreview] = useState(false),
     [error, setError] = useState(""),

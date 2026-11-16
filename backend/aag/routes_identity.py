@@ -25,6 +25,7 @@ from .auth import (
 from .db import audit, record
 from .identity_lifecycle import assert_identity_epoch, check_identity, identity_epoch
 from .models import APIKey, DeviceClient, DeviceGrant, OIDCState, Session, Usage, User
+from .return_paths import normalize_return_to
 from .schemas import (
     DeviceAuthorize,
     DeviceDecision,
@@ -128,7 +129,7 @@ async def discovery(settings):
 
 
 @router.get("/auth/oidc/login")
-async def oidc_login(request: Request):
+async def oidc_login(request: Request, return_to: str | None = None):
     settings = request.app.state.settings
     if settings.auth_mode != "oidc":
         raise HTTPException(404, "OIDC disabled")
@@ -139,7 +140,11 @@ async def oidc_login(request: Request):
         s.execute(delete(OIDCState).where(OIDCState.expires_at < time.time()))
         s.add(
             OIDCState(
-                digest=digest(state), verifier=verifier, nonce=nonce, expires_at=time.time() + 600
+                digest=digest(state),
+                verifier=verifier,
+                nonce=nonce,
+                expires_at=time.time() + 600,
+                return_to=normalize_return_to(return_to),
             )
         )
     challenge = (
@@ -240,7 +245,7 @@ async def oidc_callback(request, code, state):
             s.flush()
         if not user.active:
             raise HTTPException(403, "Account disabled")
-        response = RedirectResponse("/", status_code=303)
+        response = RedirectResponse(normalize_return_to(flow.return_to), status_code=303)
         issue_session(s, user, response, settings)
         response.delete_cookie("aag_oidc", path="/sso/callback")
         audit(s, user.id, "auth.oidc", user.id)

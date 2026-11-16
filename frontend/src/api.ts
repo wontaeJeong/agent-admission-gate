@@ -1,3 +1,5 @@
+import { sessionCoordinator } from "./session";
+
 export class APIError extends Error {
   constructor(
     public status: number,
@@ -10,6 +12,7 @@ export async function api<T = any>(
   path: string,
   init: RequestInit = {},
 ): Promise<T> {
+  const capture = sessionCoordinator.capture();
   const response = await fetch("/api" + path, {
     credentials: "same-origin",
     ...init,
@@ -21,6 +24,13 @@ export async function api<T = any>(
     },
   });
   const data = await response.json().catch(() => ({}));
+  if (!sessionCoordinator.isCurrent(capture))
+    throw new APIError(
+      409,
+      "Account changed; reopen the form before submitting",
+    );
+  if (response.status === 401 && path !== "/auth/login")
+    sessionCoordinator.expire(capture);
   if (!response.ok)
     throw new APIError(
       response.status,
@@ -34,6 +44,22 @@ export async function api<T = any>(
 }
 export const send = <T = any>(path: string, body: unknown, method = "POST") =>
   api<T>(path, { method, body: JSON.stringify(body) });
+export const sendAsAccount = <T = any>(
+  path: string,
+  body: unknown,
+  accountId: string,
+  method = "POST",
+): Promise<T> => {
+  if (sessionCoordinator.capture().accountId !== accountId)
+    return Promise.reject(
+      new APIError(409, "Account changed; reopen the form before submitting"),
+    );
+  return api<T>(path, {
+    method,
+    body: body instanceof FormData ? body : JSON.stringify(body),
+    headers: { "X-AAG-Account": accountId },
+  });
+};
 export type User = {
   id: string;
   name: string;

@@ -87,6 +87,7 @@ class DeviceGrant(Base):
 
 class OIDCState(Base):
     __tablename__ = "oidc_states"
+    return_to: Mapped[str | None] = mapped_column(String(2048))
     digest: Mapped[str] = mapped_column(String(64), primary_key=True)
     verifier: Mapped[str] = mapped_column(String(100))
     nonce: Mapped[str] = mapped_column(String(100))

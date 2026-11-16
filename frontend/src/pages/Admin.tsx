@@ -1,6 +1,7 @@
+import { useAccountMutation } from "../accountMutations";
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, send, timestamp, type User } from "../api";
+import { api, timestamp, type User } from "../api";
 import {
   Badge,
   Code,
@@ -61,6 +62,7 @@ export function Admin() {
   );
 }
 function Users() {
+  const send = useAccountMutation();
   const [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
     load = useLoad("/admin/users", refresh),
@@ -317,6 +319,7 @@ function AdminRead({ tab }: { tab: string }) {
   );
 }
 function Exceptions() {
+  const send = useAccountMutation();
   const [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
     load = useLoad("/admin/allowlist", refresh),
@@ -399,9 +402,11 @@ function Exceptions() {
                   <button
                     onClick={async () => {
                       try {
-                        await api("/admin/allowlist/" + e.id, {
-                          method: "DELETE",
-                        });
+                        await send(
+                          "/admin/allowlist/" + e.id,
+                          undefined,
+                          "DELETE",
+                        );
                         setRefresh((x) => x + 1);
                       } catch (e) {
                         setError((e as Error).message);
