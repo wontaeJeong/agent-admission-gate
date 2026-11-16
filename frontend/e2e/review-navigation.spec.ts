@@ -3,6 +3,9 @@ import { expect, test } from "@playwright/test";
 test("a requester can find their own review without reviewer permissions", async ({
   page,
 }) => {
+  await page.route("**/api/notifications/unread-count", (route) =>
+    route.fulfill({ json: { unread_count: 0 } }),
+  );
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({
       json: {
@@ -44,6 +47,9 @@ test("a requester can find their own review without reviewer permissions", async
 test("an administrator without reviewer qualification can find the review queue", async ({
   page,
 }) => {
+  await page.route("**/api/notifications/unread-count", (route) =>
+    route.fulfill({ json: { unread_count: 0 } }),
+  );
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({
       json: {

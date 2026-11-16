@@ -59,6 +59,9 @@ for (const nextAccount of ["second", "first"]) {
     let account = "first";
     let saved: string | null = null;
     let releaseSave: (() => void) | undefined;
+    await page.route("**/api/notifications/unread-count", (route) =>
+      route.fulfill({ json: { unread_count: 0 } }),
+    );
     await page.route("**/api/auth/me", (route) =>
       route.fulfill({
         json: { id: account, name: account, role: "user", reviewer: false },
@@ -133,6 +136,9 @@ test("a profile save completed after navigation updates the current sidebar", as
 }) => {
   let releaseSave: (() => void) | undefined;
   let saved: string | null = null;
+  await page.route("**/api/notifications/unread-count", (route) =>
+    route.fulfill({ json: { unread_count: 0 } }),
+  );
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({
       json: { id: "first", name: "first", role: "user", reviewer: false },
@@ -179,6 +185,9 @@ test("overlapping saves refresh to the last committed value", async ({
 }) => {
   let saved: string | null = null;
   let releaseFirst: (() => void) | undefined;
+  await page.route("**/api/notifications/unread-count", (route) =>
+    route.fulfill({ json: { unread_count: 0 } }),
+  );
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({
       json: { id: "first", name: "first", role: "user", reviewer: false },
@@ -240,6 +249,9 @@ test("a previous save does not erase new unsaved input after returning", async (
 }) => {
   let saved: string | null = null;
   let releaseFirst: (() => void) | undefined;
+  await page.route("**/api/notifications/unread-count", (route) =>
+    route.fulfill({ json: { unread_count: 0 } }),
+  );
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({
       json: { id: "first", name: "first", role: "user", reviewer: false },

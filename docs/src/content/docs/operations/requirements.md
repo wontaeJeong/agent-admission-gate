@@ -18,6 +18,7 @@ title: 요구사항 추적과 검증 범위
 | 1회 노출·90일 API 키 | APIKey, 개인/관리자 화면 | 해시 보관·만료·폐기·scope ceiling |
 | 8자리/10분 Device Code | DeviceClient/Grant | 승인/거절·poll interval·한 번 교환·만료·교환 시 사용자 확인; API 키 기본 비활성 |
 | 검토·코멘트·감사 | Review/Comment/Audit | 자기 승인 금지, 중복 결정, 내부 코멘트 비노출 |
+| 개인 알림함·벨·수신 설정 | notifications.py, routes_notifications.py, Notifications.tsx | 실제 검사/검토/공개 코멘트 연결, 읽음·보관·복원·필터·페이지, 트랜잭션 중복 방지, 세션/권한/내부본문 격리, 90일 보존, 브라우저·모바일·계정 전환 |
 | 예외 allowlist | source/hash/fingerprint/expiry | 다른 소스/내용에 적용 금지, 다음 검사 적용 |
 | 사이드바/라우트/8개 상세 탭 | App.tsx, Scans.tsx | 브라우저 탐색·모바일 overflow·실 데이터 |
 | 사용자 설정·표시 이름 | routes_profile.py, AccountSettings.tsx | 본인 세션 전용·계정/감사 식별자와 분리, 이름 저장/초기화·이름 소유자 격리, 브라우저 로컬 화면 설정 구분 |

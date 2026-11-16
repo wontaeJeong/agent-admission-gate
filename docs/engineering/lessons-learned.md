@@ -240,3 +240,33 @@
 - Failure: a migration-test setup command was rejected because it attempted to remove a fixed temporary database path.
 - Resolution: use a unique new temporary SQLite path for each validation run.
 - Prevention: avoid deleting a pre-existing path as test setup; select an isolated scratch path instead.
+
+### Notification inbox integration (2026-11-16)
+
+- Failures: the first preview check could not find its accessible menu name; rapidly changing tab and category restored the old tab.
+- Cause: Radix's generated `aria-labelledby` took precedence over the explicit menu label, and a category handler retained the previous route render's tab value.
+- Resolution: explicitly override the generated menu label reference and update independent filters against the current browser URL. The browser scenarios now pass without inserting artificial waits between filter actions.
+- Prevention: inspect the accessibility tree and test successive filter changes during route transitions, rather than assuming a click has already committed a React render.
+- Failures: mark-all was disabled when unread items were beyond the visible page, and a failed count request prevented manual list refresh.
+- Cause: the button only examined visible rows, while list invalidation was coupled to successful count responses.
+- Resolution: enable mark-all from the full inbox unread count and advance list refresh independently of count success. Both cases were reproduced with failing browser checks before fixing them.
+- Prevention: include multi-page unread boundaries and partial endpoint outages in inbox verification.
+- Failures: visual inspection found a preference form without panel padding and vertically stacked checkbox rows; the initial preview capture included a lazy-loading background.
+- Cause and resolution: shared label styles inherited `flex-direction: column` and the base panel supplied no padding. Specify row direction/padding in the notification styles and wait for loaded inbox rows before capturing the preview.
+- Prevention: inspect settings as well as list screenshots, at desktop and mobile widths, and wait for meaningful content before captures.
+- Setup notes: an initial Playwright CDN download was not a valid archive; its built-in alternate host completed the install. Lint also removed an unused test import, and one patch was reapplied after checking the formatter's actual line layout.
+- Prevention: use the installer's supported fallback, run lint before commits, and match patches to the current formatted source.
+
+### Notification review boundaries (2026-11-16)
+
+- Review reproduced a stale tab reading a new cookie account's inbox, an uncommitted delivery consumed by mark-all, lost row focus during polling, and an unrelated preference overwritten by another device.
+- Resolution: bind each notification request to the rendered account and reconcile sessions; use a per-recipient counter held through commit for snapshots; preserve same-filter rows during refresh while clearing denied data; send preference deltas. Native new-tab links use an opening route that persists read state, and filtered unread counts govern mark-all.
+- Prevention: exercise shared-cookie tabs, open database writer transactions, delayed refresh with a focused row, and independently changed settings rather than only sequential single-tab flows. Regression tests reproduced each material issue before the fix.
+- Integration verification then found that older identity-mocked browser tests made real unauthenticated count requests, triggering the new fail-closed session reconciliation. Their fixtures now supply the count response alongside the mocked identity; real-session notification tests retain the real API.
+- Prevention: when a shared authenticated shell gains a new mandatory read, update identity mocks to model its session consistently and rerun the complete browser suite. Use short traceback output for credential-bearing fixtures so failure diagnostics do not print synthetic token values.
+
+### Browser runner drift (2026-11-16)
+
+- Failure: PR CI could not install Chromium dependencies because `ubuntu-latest` selected Ubuntu 26.04, unsupported by the repository's locked Playwright 1.56.1.
+- Resolution: pin the web job to Ubuntu 24.04, which is present in that Playwright release's dependency manifest; keep the same browser and test versions.
+- Prevention: pin browser-test runner OS versions alongside the Playwright lockfile and review OS support before changing either. Rerun CI rather than bypassing a failed required check.

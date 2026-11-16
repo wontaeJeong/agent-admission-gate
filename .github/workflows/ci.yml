@@ -24,7 +24,8 @@ jobs:
           uv run alembic downgrade base
           uv run alembic upgrade head
   web:
-    runs-on: ubuntu-latest
+    # Match the OS supported by the locked Playwright browser/dependency bundle.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

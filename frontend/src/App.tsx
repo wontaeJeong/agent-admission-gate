@@ -1,6 +1,7 @@
 import {
   Suspense,
   lazy,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -41,6 +42,7 @@ import { Brand, syncFavicon } from "./Brand";
 import { AppContext } from "./context";
 import { ErrorMessage, State } from "./components";
 import { Landing } from "./pages/Landing";
+import { NotificationBell, NotificationProvider } from "./notifications";
 const Dashboard = lazy(() =>
   import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })),
 );
@@ -85,6 +87,14 @@ const AccountSettings = lazy(() =>
     default: m.AccountSettings,
   })),
 );
+const Notifications = lazy(() =>
+  import("./pages/Notifications").then((m) => ({ default: m.Notifications })),
+);
+const OpenNotification = lazy(() =>
+  import("./pages/Notifications").then((m) => ({
+    default: m.OpenNotification,
+  })),
+);
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null),
@@ -94,7 +104,35 @@ export default function App() {
   const [displayName, setDisplayNameState] = useState<string | null>(null);
   const profileGeneration = useRef(0);
   const currentUserId = useRef<string | null>(null);
+  const sessionGeneration = useRef(0);
   currentUserId.current = user?.id || null;
+  const reconcileSession = useCallback((ownerId?: string) => {
+    if (ownerId && currentUserId.current !== ownerId) return;
+    const generation = ++sessionGeneration.current;
+    setUser(null);
+    setLoading(true);
+    setError("");
+    Promise.all([api("/auth/config"), api<User>("/auth/me").catch(() => null)])
+      .then(([config, current]) => {
+        if (sessionGeneration.current !== generation) return;
+        setConfig(config);
+        setUser(current);
+      })
+      .catch((e) => {
+        if (sessionGeneration.current === generation)
+          setError((e as Error).message);
+      })
+      .finally(() => {
+        if (sessionGeneration.current === generation) setLoading(false);
+      });
+  }, []);
+  useEffect(() => {
+    const changed = (event: StorageEvent) => {
+      if (event.key === "aag-auth-change") reconcileSession();
+    };
+    window.addEventListener("storage", changed);
+    return () => window.removeEventListener("storage", changed);
+  }, [reconcileSession]);
   const [profileRevision, setProfileRevision] = useState(0);
   const syncDisplayName = (ownerId: string, refreshPage: boolean) => {
     if (currentUserId.current !== ownerId) return;
@@ -123,14 +161,8 @@ export default function App() {
     navigate = useNavigate(),
     t = (ko: string, en: string) => (lang === "ko" ? ko : en);
   useEffect(() => {
-    Promise.all([api("/auth/config"), api<User>("/auth/me").catch(() => null)])
-      .then(([c, u]) => {
-        setConfig(c);
-        setUser(u);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+    reconcileSession();
+  }, [reconcileSession]);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.palette = palette;
@@ -161,7 +193,9 @@ export default function App() {
   }, [user?.id]);
   const refresh = async () => {
     const current = await api<User>("/auth/me");
+    sessionGeneration.current++;
     setUser(current);
+    localStorage.setItem("aag-auth-change", crypto.randomUUID());
     if (location.pathname === "/login") navigate("/");
   };
   if (loading || error)
@@ -185,275 +219,301 @@ export default function App() {
         lang,
         syncDisplayName,
         profileRevision,
+        reconcileSession,
       }}
     >
-      <a href="#main-content" className="skip-link">
-        {t("본문으로 이동", "Skip to content")}
-      </a>
-      <div className="app-shell">
-        <aside className={"sidebar " + (open ? "open" : "")}>
-          <Link to="/" className="brand-link" aria-label="Agent Admission Gate">
-            <Brand />
-          </Link>
-          <Link className="primary new-scan" to="/new">
-            <Plus size={17} />
-            {t("새 검사 실행", "New scan")}
-          </Link>
-          <nav aria-label={t("주 탐색", "Main navigation")}>
-            <div className="nav-group-label">{t("검사", "INSPECT")}</div>
-            <NavLink to="/" end>
-              <LayoutDashboard size={17} />
-              {t("대시보드", "Dashboard")}
-            </NavLink>
-            <NavLink to="/jobs">
-              <ListChecks size={17} />
-              {t("작업 목록", "Scans")}
-            </NavLink>
-            <NavLink to="/reviews">
-              <ShieldCheck size={17} />
-              {t("검토", "Reviews")}
-            </NavLink>
-            <div className="nav-group-label">{t("연동", "CONNECT")}</div>
-            <NavLink to="/guide">
-              <BookOpen size={17} />
-              {t("API · MCP 가이드", "API · MCP guide")}
-            </NavLink>
-            <NavLink to="/api-keys">
-              <KeyRound size={17} />
-              {t("API 키", "API keys")}
-            </NavLink>
-            <NavLink to="/device-clients">
-              <Unplug size={17} />
-              {t("도구 연결 등록", "Connect tools")}
-            </NavLink>
-            {config.boards_enabled && (
-              <>
-                <div className="nav-group-label">{t("소통", "COMMUNITY")}</div>
-                <NavLink to="/boards">
-                  <MessageSquare size={17} />
-                  {t("공지사항 · VOC", "Notices · Feedback")}
-                </NavLink>
-              </>
-            )}
-            <div className="nav-group-label">{t("서비스", "SERVICE")}</div>
-            <NavLink to="/about">
-              <Info size={17} />
-              {t("서비스 소개", "About")}
-            </NavLink>
-            {user.role === "admin" && (
-              <>
-                <div className="nav-group-label">{t("관리", "MANAGE")}</div>
-                <NavLink to="/admin">
-                  <Settings size={17} />
-                  {t("관리자", "Administration")}
-                </NavLink>
-                <NavLink to="/coverage">
-                  <ClipboardList size={17} />
-                  {t("요구사항 · 검증", "Coverage · evidence")}
-                </NavLink>
-              </>
-            )}
-          </nav>
-          <footer className="sidebar-footer">
-            <DropdownMenu.Root>
-              <DropdownMenu.Trigger
-                className="user-line account-trigger"
-                aria-label={t(
-                  `계정 메뉴: ${displayName || user.name}`,
-                  `Account menu: ${displayName || user.name}`,
-                )}
-              >
-                <span className="avatar">
-                  {(displayName || user.name).slice(0, 1).toUpperCase()}
-                </span>
-                <span>
-                  <b>{displayName || user.name}</b>
-                  <small>
-                    {user.role}
-                    {user.reviewer ? " · reviewer" : ""}
-                  </small>
-                </span>
-                <ChevronsUpDown size={16} />
-              </DropdownMenu.Trigger>
-              <DropdownMenu.Portal>
-                <DropdownMenu.Content
-                  className="account-menu"
-                  side="top"
-                  align="start"
-                  sideOffset={8}
+      <NotificationProvider key={user.id}>
+        <a href="#main-content" className="skip-link">
+          {t("본문으로 이동", "Skip to content")}
+        </a>
+        <div className="app-shell">
+          <aside className={"sidebar " + (open ? "open" : "")}>
+            <Link
+              to="/"
+              className="brand-link"
+              aria-label="Agent Admission Gate"
+            >
+              <Brand />
+            </Link>
+            <Link className="primary new-scan" to="/new">
+              <Plus size={17} />
+              {t("새 검사 실행", "New scan")}
+            </Link>
+            <nav aria-label={t("주 탐색", "Main navigation")}>
+              <div className="nav-group-label">{t("검사", "INSPECT")}</div>
+              <NavLink to="/" end>
+                <LayoutDashboard size={17} />
+                {t("대시보드", "Dashboard")}
+              </NavLink>
+              <NavLink to="/jobs">
+                <ListChecks size={17} />
+                {t("작업 목록", "Scans")}
+              </NavLink>
+              <NavLink to="/reviews">
+                <ShieldCheck size={17} />
+                {t("검토", "Reviews")}
+              </NavLink>
+              <div className="nav-group-label">{t("연동", "CONNECT")}</div>
+              <NavLink to="/guide">
+                <BookOpen size={17} />
+                {t("API · MCP 가이드", "API · MCP guide")}
+              </NavLink>
+              <NavLink to="/api-keys">
+                <KeyRound size={17} />
+                {t("API 키", "API keys")}
+              </NavLink>
+              <NavLink to="/device-clients">
+                <Unplug size={17} />
+                {t("도구 연결 등록", "Connect tools")}
+              </NavLink>
+              {config.boards_enabled && (
+                <>
+                  <div className="nav-group-label">
+                    {t("소통", "COMMUNITY")}
+                  </div>
+                  <NavLink to="/boards">
+                    <MessageSquare size={17} />
+                    {t("공지사항 · VOC", "Notices · Feedback")}
+                  </NavLink>
+                </>
+              )}
+              <div className="nav-group-label">{t("서비스", "SERVICE")}</div>
+              <NavLink to="/about">
+                <Info size={17} />
+                {t("서비스 소개", "About")}
+              </NavLink>
+              {user.role === "admin" && (
+                <>
+                  <div className="nav-group-label">{t("관리", "MANAGE")}</div>
+                  <NavLink to="/admin">
+                    <Settings size={17} />
+                    {t("관리자", "Administration")}
+                  </NavLink>
+                  <NavLink to="/coverage">
+                    <ClipboardList size={17} />
+                    {t("요구사항 · 검증", "Coverage · evidence")}
+                  </NavLink>
+                </>
+              )}
+            </nav>
+            <footer className="sidebar-footer">
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger
+                  className="user-line account-trigger"
+                  aria-label={t(
+                    `계정 메뉴: ${displayName || user.name}`,
+                    `Account menu: ${displayName || user.name}`,
+                  )}
                 >
-                  <DropdownMenu.Label className="account-label">
-                    {displayName || user.name}{" "}
+                  <span className="avatar">
+                    {(displayName || user.name).slice(0, 1).toUpperCase()}
+                  </span>
+                  <span>
+                    <b>{displayName || user.name}</b>
                     <small>
                       {user.role}
                       {user.reviewer ? " · reviewer" : ""}
                     </small>
-                  </DropdownMenu.Label>
-                  <DropdownMenu.Separator className="account-separator" />
-                  <DropdownMenu.Item
-                    className="account-item"
-                    onSelect={() =>
-                      setTheme(theme === "dark" ? "light" : "dark")
-                    }
+                  </span>
+                  <ChevronsUpDown size={16} />
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    className="account-menu"
+                    side="top"
+                    align="start"
+                    sideOffset={8}
                   >
-                    {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-                    {theme === "dark"
-                      ? t("라이트 모드", "Light mode")
-                      : t("다크 모드", "Dark mode")}
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item className="account-item" asChild>
-                    <Link to="/settings">
-                      <UserRound size={16} />
-                      {t("사용자 설정", "User settings")}
-                    </Link>
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Sub>
-                    <DropdownMenu.SubTrigger className="account-item">
-                      <Settings size={16} />
-                      {t("화면 설정", "Display settings")}
-                      <ChevronRight size={15} className="account-arrow" />
-                    </DropdownMenu.SubTrigger>
-                    <DropdownMenu.Portal>
-                      <DropdownMenu.SubContent
-                        className="account-menu account-submenu"
-                        sideOffset={6}
-                      >
-                        <DropdownMenu.Label className="account-label">
-                          {t("색상 팔레트", "Color palette")}
-                        </DropdownMenu.Label>
-                        <DropdownMenu.RadioGroup
-                          value={palette}
-                          onValueChange={setPalette}
-                        >
-                          {["plum", "teal", "blue"].map((p) => (
-                            <DropdownMenu.RadioItem
-                              key={p}
-                              value={p}
-                              className="account-item"
-                            >
-                              <DropdownMenu.ItemIndicator>
-                                ✓
-                              </DropdownMenu.ItemIndicator>
-                              {p[0].toUpperCase() + p.slice(1)}
-                            </DropdownMenu.RadioItem>
-                          ))}
-                        </DropdownMenu.RadioGroup>
-                        <DropdownMenu.Separator className="account-separator" />
-                        <DropdownMenu.Item
-                          className="account-item"
-                          onSelect={() => setLang(lang === "ko" ? "en" : "ko")}
-                        >
-                          {lang === "ko" ? "English" : "한국어"}
-                        </DropdownMenu.Item>
-                      </DropdownMenu.SubContent>
-                    </DropdownMenu.Portal>
-                  </DropdownMenu.Sub>
-                  <DropdownMenu.Separator className="account-separator" />
-                  <DropdownMenu.Item
-                    className="account-item"
-                    onSelect={async () => {
-                      await send("/auth/logout", {});
-                      setUser(null);
-                    }}
-                  >
-                    <LogOut size={16} />
-                    {t("로그아웃", "Sign out")}
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Portal>
-            </DropdownMenu.Root>
-          </footer>
-        </aside>
-        <div className="workspace">
-          <div className="topbar">
-            <button
-              className="mobile-toggle icon-button"
-              aria-label={t("메뉴", "Menu")}
-              onClick={() => setOpen(!open)}
-            >
-              <Menu size={20} />
-            </button>
-            <span className="breadcrumb">
-              Workspace <span>/</span> Agent Admission Gate
-            </span>
-            <span className="environment">
-              <span className="dot" />
-              {config.environment}
-            </span>
-            <Link to="/guide" aria-label={t("도움말", "Help")}>
-              <CircleHelp size={17} />
-            </Link>
-          </div>
-          <main id="main-content" tabIndex={-1}>
-            <Suspense
-              fallback={
-                <State loading>
-                  <></>
-                </State>
-              }
-            >
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/new" element={<NewScan />} />
-                <Route path="/jobs" element={<Jobs />} />
-                <Route path="/jobs/:id" element={<JobDetail />} />
-                <Route path="/reviews" element={<Reviews />} />
-                <Route path="/reviews/:id" element={<ReviewDetail />} />
-                <Route path="/api-keys" element={<Keys />} />
-                <Route path="/device-clients" element={<Devices />} />
-                <Route path="/guide" element={<Guide />} />
-                <Route path="/settings" element={<AccountSettings />} />
-                <Route
-                  path="/admin"
-                  element={
-                    user.role === "admin" ? (
-                      <Admin />
-                    ) : (
-                      <div role="alert">403</div>
-                    )
-                  }
-                />
-                <Route
-                  path="/coverage"
-                  element={
-                    user.role === "admin" ? (
-                      <Coverage />
-                    ) : (
-                      <div role="alert">403</div>
-                    )
-                  }
-                />
-                <Route
-                  path="/about"
-                  element={
-                    <Landing mode={config?.mode ?? "oidc"} authenticated />
-                  }
-                />
-                {config.boards_enabled && (
-                  <>
-                    <Route path="/boards" element={<Boards />} />
-                    <Route path="/boards/:id" element={<PostDetail />} />
-                  </>
-                )}
-                <Route
-                  path="*"
-                  element={
-                    <div className="empty">
-                      <h1>404</h1>
-                      <p>
-                        {t("페이지를 찾을 수 없습니다.", "Page not found.")}
-                      </p>
-                      <Link to="/">
-                        {t("대시보드로 이동", "Back to dashboard")}
+                    <DropdownMenu.Label className="account-label">
+                      {displayName || user.name}{" "}
+                      <small>
+                        {user.role}
+                        {user.reviewer ? " · reviewer" : ""}
+                      </small>
+                    </DropdownMenu.Label>
+                    <DropdownMenu.Separator className="account-separator" />
+                    <DropdownMenu.Item
+                      className="account-item"
+                      onSelect={() =>
+                        setTheme(theme === "dark" ? "light" : "dark")
+                      }
+                    >
+                      {theme === "dark" ? (
+                        <Sun size={16} />
+                      ) : (
+                        <Moon size={16} />
+                      )}
+                      {theme === "dark"
+                        ? t("라이트 모드", "Light mode")
+                        : t("다크 모드", "Dark mode")}
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item className="account-item" asChild>
+                      <Link to="/settings">
+                        <UserRound size={16} />
+                        {t("사용자 설정", "User settings")}
                       </Link>
-                    </div>
-                  }
-                />
-              </Routes>
-            </Suspense>
-          </main>
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Sub>
+                      <DropdownMenu.SubTrigger className="account-item">
+                        <Settings size={16} />
+                        {t("화면 설정", "Display settings")}
+                        <ChevronRight size={15} className="account-arrow" />
+                      </DropdownMenu.SubTrigger>
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.SubContent
+                          className="account-menu account-submenu"
+                          sideOffset={6}
+                        >
+                          <DropdownMenu.Label className="account-label">
+                            {t("색상 팔레트", "Color palette")}
+                          </DropdownMenu.Label>
+                          <DropdownMenu.RadioGroup
+                            value={palette}
+                            onValueChange={setPalette}
+                          >
+                            {["plum", "teal", "blue"].map((p) => (
+                              <DropdownMenu.RadioItem
+                                key={p}
+                                value={p}
+                                className="account-item"
+                              >
+                                <DropdownMenu.ItemIndicator>
+                                  ✓
+                                </DropdownMenu.ItemIndicator>
+                                {p[0].toUpperCase() + p.slice(1)}
+                              </DropdownMenu.RadioItem>
+                            ))}
+                          </DropdownMenu.RadioGroup>
+                          <DropdownMenu.Separator className="account-separator" />
+                          <DropdownMenu.Item
+                            className="account-item"
+                            onSelect={() =>
+                              setLang(lang === "ko" ? "en" : "ko")
+                            }
+                          >
+                            {lang === "ko" ? "English" : "한국어"}
+                          </DropdownMenu.Item>
+                        </DropdownMenu.SubContent>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu.Sub>
+                    <DropdownMenu.Separator className="account-separator" />
+                    <DropdownMenu.Item
+                      className="account-item"
+                      onSelect={async () => {
+                        await send("/auth/logout", {});
+                        setUser(null);
+                        sessionGeneration.current++;
+                        localStorage.setItem(
+                          "aag-auth-change",
+                          crypto.randomUUID(),
+                        );
+                      }}
+                    >
+                      <LogOut size={16} />
+                      {t("로그아웃", "Sign out")}
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            </footer>
+          </aside>
+          <div className="workspace">
+            <div className="topbar">
+              <button
+                className="mobile-toggle icon-button"
+                aria-label={t("메뉴", "Menu")}
+                onClick={() => setOpen(!open)}
+              >
+                <Menu size={20} />
+              </button>
+              <span className="breadcrumb">
+                Workspace <span>/</span> Agent Admission Gate
+              </span>
+              <span className="environment">
+                <span className="dot" />
+                {config.environment}
+              </span>
+              <NotificationBell />
+              <Link to="/guide" aria-label={t("도움말", "Help")}>
+                <CircleHelp size={17} />
+              </Link>
+            </div>
+            <main id="main-content" tabIndex={-1}>
+              <Suspense
+                fallback={
+                  <State loading>
+                    <></>
+                  </State>
+                }
+              >
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/new" element={<NewScan />} />
+                  <Route path="/jobs" element={<Jobs />} />
+                  <Route path="/jobs/:id" element={<JobDetail />} />
+                  <Route path="/reviews" element={<Reviews />} />
+                  <Route path="/reviews/:id" element={<ReviewDetail />} />
+                  <Route path="/api-keys" element={<Keys />} />
+                  <Route path="/device-clients" element={<Devices />} />
+                  <Route path="/guide" element={<Guide />} />
+                  <Route path="/settings" element={<AccountSettings />} />
+                  <Route path="/notifications" element={<Notifications />} />
+                  <Route
+                    path="/notifications/open/:id"
+                    element={<OpenNotification />}
+                  />
+                  <Route
+                    path="/admin"
+                    element={
+                      user.role === "admin" ? (
+                        <Admin />
+                      ) : (
+                        <div role="alert">403</div>
+                      )
+                    }
+                  />
+                  <Route
+                    path="/coverage"
+                    element={
+                      user.role === "admin" ? (
+                        <Coverage />
+                      ) : (
+                        <div role="alert">403</div>
+                      )
+                    }
+                  />
+                  <Route
+                    path="/about"
+                    element={
+                      <Landing mode={config?.mode ?? "oidc"} authenticated />
+                    }
+                  />
+                  {config.boards_enabled && (
+                    <>
+                      <Route path="/boards" element={<Boards />} />
+                      <Route path="/boards/:id" element={<PostDetail />} />
+                    </>
+                  )}
+                  <Route
+                    path="*"
+                    element={
+                      <div className="empty">
+                        <h1>404</h1>
+                        <p>
+                          {t("페이지를 찾을 수 없습니다.", "Page not found.")}
+                        </p>
+                        <Link to="/">
+                          {t("대시보드로 이동", "Back to dashboard")}
+                        </Link>
+                      </div>
+                    }
+                  />
+                </Routes>
+              </Suspense>
+            </main>
+          </div>
         </div>
-      </div>
+      </NotificationProvider>
     </AppContext.Provider>
   );
 }

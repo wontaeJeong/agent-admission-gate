@@ -7,11 +7,12 @@ import time
 from pathlib import Path
 
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from . import llm
 from .db import audit, record
 from .models import ExceptionRule, Job
+from .notifications import notify_terminal
 from .policy import builtin_scan, decide, finding
 from .scanners import external
 from .sources import SourceError, clone, content_hash, extract_zip, validate_git_url
@@ -35,15 +36,11 @@ class ScanService:
 
     def recover(self):
         with self.db.session.begin() as s:
-            s.execute(
-                update(Job)
-                .where(Job.status.in_(["PENDING", "RUNNING"]))
-                .values(
-                    status="FAILED",
-                    error="Service restarted before completion. Resubmit the source; temporary credentials are never persisted.",
-                    completed_at=time.time(),
-                )
-            )
+            for job in s.scalars(select(Job).where(Job.status.in_(["PENDING", "RUNNING"]))):
+                job.status = "FAILED"
+                job.error = "Service restarted before completion. Resubmit the source; temporary credentials are never persisted."
+                job.completed_at = time.time()
+                notify_terminal(s, job)
 
     async def shutdown(self):
         tasks = list(self.tasks.values())
@@ -111,6 +108,7 @@ class ScanService:
                 raise HTTPException(409, "Scan already finished")
             job.status, job.completed_at = "CANCELLED", time.time()
             audit(s, actor.id, "scan.cancel", job.id)
+            notify_terminal(s, job)
         if task := self.tasks.get(job_id):
             task.cancel()
         return {"status": "CANCELLED"}
@@ -202,6 +200,8 @@ class ScanService:
                                 )
                             verdict = decide(result["findings"], result["engines"])
                             row = s.get(Job, job_id)
+                            if row.status != "RUNNING":
+                                return
                             row.status, row.verdict, row.effective_verdict = (
                                 "COMPLETED",
                                 verdict,
@@ -216,6 +216,7 @@ class ScanService:
                                 verdict=verdict,
                                 cached=bool(row.cached_from),
                             )
+                            notify_terminal(s, row)
         except asyncio.CancelledError:
             self.fail(job_id, "CANCELLED", "Scan cancelled; temporary workspace removed")
             raise
@@ -232,6 +233,7 @@ class ScanService:
             if job and job.status not in TERMINAL:
                 job.status, job.error, job.completed_at = status, message, time.time()
                 audit(s, job.owner_id, "scan." + status.lower(), job.id)
+                notify_terminal(s, job)
 
     async def scan(self, job, files, root, work):
         started = time.time()

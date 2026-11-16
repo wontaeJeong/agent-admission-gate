@@ -2,6 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function mockActivity(page: Page, reviewer: boolean) {
   const scanRequests: URLSearchParams[] = [];
+  await page.route("**/api/notifications/unread-count", (route) =>
+    route.fulfill({ json: { unread_count: 0 } }),
+  );
   await page.route("**/api/auth/me", (route) =>
     route.fulfill({
       json: {

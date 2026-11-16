@@ -194,6 +194,9 @@ function ProfileForm({
         <Link to="/api-keys">
           {t("내 API 키 관리", "Manage my API keys")} →
         </Link>
+        <Link to="/notifications?view=settings">
+          {t("알림 수신 설정", "Notification settings")} →
+        </Link>
       </section>
     </div>
   );
