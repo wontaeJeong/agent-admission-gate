@@ -38,9 +38,9 @@
 - [x] **3. 서버 계약 구현:** nullable OIDCState.return_to를 추가하고 기존 state는 /로 처리한다. callback은 저장된 state만 참조한다. actor에서 interactive mutation의 계정 헤더가 있으면 불일치를409로 거부한다. 새 필수 endpoint는 누락도409다. 기존 PKCE·일회 소비·동시 실효 검증은 유지한다.
 - [x] **4. 프런트 연결:** api의401 이벤트를 계정 generation에 결합하고 로그인 실패·403·503을 분리한다. 각 폼이 열릴 때의 accountId로 제출한다. 재로그인 안내 전 등록된 flush를 호출하고 POST를 자동 재전송하지 않는다.
 - [x] **5. race 검증:** test_old_account_mutation_rejected는 오래된 계정 헤더+새 쿠키의 재검사/코멘트/게시글/키 발급이409이고 DB 변경0건임을 확인한다. E2E로 발견 링크→SSO 모의 callback→같은 항목, 두 탭 계정 전환, 중복401 안내 한 번,403/503에서 로그아웃 없음을 확인한다.
-- [ ] **6. PR:** 대상 pytest·returnPaths 단위·frontend build·session-return E2E·migration round trip을 통과시킨다. 복귀·만료 안내 PC/모바일 이미지와 함께 feat: preserve return destination and bind submissions to account로 커밋·PR을 만든다.
+- [x] **6. PR:** 대상 pytest·returnPaths 단위·frontend build·session-return E2E·migration round trip을 통과시킨다. 복귀·만료 안내 PC/모바일 이미지와 함께 feat: preserve return destination and bind submissions to account로 커밋·PR을 만든다.
 
-검증 기록: `backend/tests/test_return_paths.py`, `test_session_return.py`, `test_account_bound_mutations.py`, `frontend/src/session.test.ts`, `returnPaths.test.ts`, `frontend/e2e/session-return.spec.ts`. A1은 발견 query를 포함한 정확한 복귀 URL과 현재 허용된 결과 내용을 검증한다. 임의 finding/occurrence의 화면 선택은 E1 범위이며 F04 전체 완료를 앞당겨 주장하지 않는다. PR 단계는 게시·검토·병합을 맡은 실행자가 완료한다.
+검증 기록: `backend/tests/test_return_paths.py`, `test_session_return.py`, `test_account_bound_mutations.py`, `frontend/src/session.test.ts`, `returnPaths.test.ts`, `frontend/e2e/session-return.spec.ts`. A1은 발견 query를 포함한 정확한 복귀 URL과 현재 허용된 결과 내용을 검증한다. 임의 finding/occurrence의 화면 선택은 E1 범위이며 F04 전체 완료를 앞당겨 주장하지 않는다. [PR #16](https://github.com/wontaeJeong/agent-admission-gate/pull/16)에 구현과 독립 검토 수정 커밋 `3a929f7`을 반영할 준비를 마쳤다. 이 체크는 로컬 검증과 PR 작성을 뜻하며, 수정분 재검토·필수 CI·병합은 실행 담당자의 확인을 기다린다.
 
 **완료:** F04의 로그인 복귀 기반. 후속 작업은 sendAsAccount와 SessionCoordinator의 flush/generation을 사용한다.
 
