@@ -1243,7 +1243,12 @@ export function Findings({
   function update(values: Record<string, string | null>) {
     const next = new URLSearchParams(params);
     for (const [key, value] of Object.entries(values)) {
-      if (value === null || value === "" || value === "all") next.delete(key);
+      if (
+        value === null ||
+        value === "" ||
+        ((key === "severity" || key === "engine") && value === "all")
+      )
+        next.delete(key);
       else next.set(key, value);
     }
     if (urlSelection) setRouteParams(next, { replace: true });

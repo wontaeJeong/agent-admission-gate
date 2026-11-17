@@ -38,9 +38,9 @@
 - [x] **2. 실패 확인:** uv run pytest backend/tests/test_scan_summary.py -q 및 frontend의 findingSelection.test.ts를 실행해 새 기능 부재로 실패하는지 확인한다.
 - [x] **3. API 구현:** owned_job/scan:read를 확인한 뒤 field allowlist로 요약한다. review는 현재 조회 가능한 interactive session에만 전달한다. 심각도→engine/rule/path/line 정렬·상위20개·생략 수·coverage를 표시하고 사용자 문자열을 escape한다. 입력 원본 오류·내부 코멘트·Raw JSON은 넘기지 않는다.
 - [x] **4. 화면 구현:** severity/engine/q/선택을 URL에 보존한다. 유효 선택이 필터 밖이면 선택 상세와 '필터 밖 항목' 안내를 표시하고 필터 초기화 버튼을 제공한다. 없는 선택은 누락 상태를 보여준다. 복사 실패를 알리고 인쇄 화면은 safe summary+print CSS를 사용한다.
-- [ ] **5. PR:** 대상 pytest·선택 단위·frontend build·scan-sharing E2E로 로그인 복귀, 중복/없는 발견, 제한된 요약, 모바일 공유·인쇄를 검증한다. 이미지와 함께 feat: share precise findings and readable scan summaries로 커밋·PR을 만든다.
+- [x] **5. PR:** 대상 pytest·선택 단위·frontend build·scan-sharing E2E로 로그인 복귀, 중복/없는 발견, 제한된 요약, 모바일 공유·인쇄를 검증한다. 이미지와 함께 feat: share precise findings and readable scan summaries로 커밋·PR을 만든다.
 
-**구현 상태 (2026-11-17):** E1 구현·로컬 검증과 대표 이미지 준비. PR 생성·독립 검토·병합은 controller 단계이며 PR 링크는 대기 중입니다. 검증 상세는 실행 보고서 task-5-report.md에 기록합니다.
+**구현 상태 (2026-11-17):** [PR #20](https://github.com/wontaeJeong/agent-admission-gate/pull/20) 생성과 대표 이미지 준비. 리뷰 I1의 literal q=`all`/`allow` 보존을 실제 순차 입력·URL 유지 회귀로 보완했습니다. 최종 CI·독립 재검토·병합은 controller 단계입니다. 검증 상세는 실행 보고서 task-5-report.md에 기록합니다.
 
 **완료 기준:** F09. 검색 결과는 동일한 fingerprint/occurrence 링크를 사용한다.
 

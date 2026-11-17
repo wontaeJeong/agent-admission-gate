@@ -32,7 +32,14 @@ const second = {
   path: "second.py",
   evidence: "Second evidence",
 };
-async function mockFindings(page: Page) {
+async function mockFindings(
+  page: Page,
+  findings = [
+    first,
+    { ...first, fingerprint: "other", title: "Other finding" },
+    second,
+  ],
+) {
   await page.route(`**/api/scans/${id}`, async (route) => {
     const response = await page.request.get(
       provider.origin + `/api/scans/${id}`,
@@ -43,11 +50,7 @@ async function mockFindings(page: Page) {
         ...job,
         result: {
           ...job.result,
-          findings: [
-            first,
-            { ...first, fingerprint: "other", title: "Other finding" },
-            second,
-          ],
+          findings,
         },
       },
     });
@@ -334,4 +337,64 @@ test("summary denies another account and retries transient read failures", async
     .click();
   await expect(page.getByText("Scan not found", { exact: true })).toBeVisible();
   await expect(page.locator(".scan-summary")).toHaveCount(0);
+});
+
+test("literal finding queries all and allow survive sequential typing and URL updates", async ({
+  page,
+}) => {
+  await mockFindings(page, [
+    { ...first, title: "Allow network access" },
+    second,
+  ]);
+  await login(
+    page,
+    `/jobs/${id}?tab=findings&finding=duplicate&occurrence=1&severity=high&engine=builtin`,
+  );
+  const search = page.getByLabel("Finding search", { exact: true });
+  for (const [key, value] of [
+    ["a", "a"],
+    ["l", "al"],
+    ["l", "all"],
+  ]) {
+    await search.pressSequentially(key);
+    await expect(search).toHaveValue(value);
+  }
+  expect(new URL(page.url()).searchParams.get("q")).toBe("all");
+  await expect(page.locator(".finding-list")).toContainText(
+    "Allow network access",
+  );
+  await expect(page.locator(".finding-detail h2")).toHaveText(
+    "Second duplicate",
+  );
+  for (const [key, value] of [
+    ["o", "allo"],
+    ["w", "allow"],
+  ]) {
+    await search.pressSequentially(key);
+    await expect(search).toHaveValue(value);
+  }
+  expect(new URL(page.url()).searchParams.get("q")).toBe("allow");
+  await page.getByLabel("Severity", { exact: true }).selectOption("all");
+  await page.getByLabel("Finding engine", { exact: true }).selectOption("all");
+  const params = new URL(page.url()).searchParams;
+  expect(params.get("q")).toBe("allow");
+  expect(params.has("severity")).toBe(false);
+  expect(params.has("engine")).toBe(false);
+  expect(params.get("finding")).toBe("duplicate");
+  expect(params.get("occurrence")).toBe("1");
+  await page.waitForResponse(
+    (response) => response.url() === provider.origin + `/api/scans/${id}`,
+  );
+  await expect(search).toHaveValue("allow");
+  await page.reload();
+  await expect(search).toHaveValue("allow");
+  expect(new URL(page.url()).searchParams.get("q")).toBe("allow");
+  await expect(page.locator(".finding-detail h2")).toHaveText(
+    "Second duplicate",
+  );
+  await search.fill("");
+  expect(new URL(page.url()).searchParams.has("q")).toBe(false);
+  await expect(page.locator(".finding-list button.selected")).toContainText(
+    "Second duplicate",
+  );
 });
