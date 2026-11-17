@@ -1,16 +1,9 @@
 import { useState } from "react";
 import { workflowLabel } from "./ReviewActivity";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { type Job, timestamp } from "../api";
-import {
-  Badge,
-  Empty,
-  PageTitle,
-  Pagination,
-  State,
-  useLoad,
-} from "../components";
-import { ListBackLink, ListLink } from "../SavedViews";
+import { Badge, Empty, Pagination, State, useLoad } from "../components";
+import { ListLink } from "../SavedViews";
 import { useApp, useText } from "../context";
 
 type HistoryItem = Pick<
@@ -291,132 +284,5 @@ export function ScanHistory({ job }: { job: Job }) {
         )}
       </State>
     </section>
-  );
-}
-
-/** A handled, read-only pair entry; findings comparison has its own API contract. */
-export function SelectedScans() {
-  const { id } = useParams(),
-    [params] = useSearchParams(),
-    t = useText();
-  const baseline = params.get("baseline");
-  const valid =
-    !!id &&
-    !!baseline &&
-    /^[A-Za-z0-9_-]{1,64}$/.test(baseline) &&
-    params.getAll("baseline").length === 1 &&
-    [...params.keys()].every((key) => key === "baseline") &&
-    baseline !== id;
-  return (
-    <>
-      <ListBackLink resource="jobs" className="back">
-        {t("검사 목록으로", "Back to scans")}
-      </ListBackLink>
-      <PageTitle eyebrow="SCAN" title={t("선택한 검사", "Selected scans")} />
-      {valid ? (
-        <SelectedPair
-          key={id + ":" + baseline}
-          currentId={id}
-          baselineId={baseline}
-        />
-      ) : (
-        <p role="alert">
-          {t(
-            "서로 다른 검사 두 건을 선택하세요.",
-            "Select two different scans.",
-          )}
-        </p>
-      )}
-    </>
-  );
-}
-function SelectedPair({
-  currentId,
-  baselineId,
-}: {
-  currentId: string;
-  baselineId: string;
-}) {
-  const t = useText(),
-    baseline = useLoad<Job>("/scans/" + encodeURIComponent(baselineId)),
-    current = useLoad<Job>("/scans/" + encodeURIComponent(currentId));
-  return (
-    <State {...baseline}>
-      <State {...current}>
-        {baseline.data && current.data && (
-          <>
-            <p className="notice">
-              {t(
-                "메타데이터만 표시합니다. 발견 사항은 비교하지 않습니다.",
-                "Metadata only. Findings are not compared.",
-              )}
-            </p>
-            <section className="panel">
-              <div className="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t("구분", "Role")}</th>
-                      <th>{t("검사", "Scan")}</th>
-                      <th>{t("ref / commit", "Ref / commit")}</th>
-                      <th>{t("프로필 / 실행", "Profile / execution")}</th>
-                      <th>
-                        {t("원래 / 최종 판정", "Original / final verdict")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(
-                      [
-                        [t("기준", "Baseline"), baseline.data],
-                        [t("현재", "Current"), current.data],
-                      ] as [string, Job][]
-                    ).map(([role, job]) => (
-                      <tr key={role}>
-                        <td>{role}</td>
-                        <td>
-                          <ListLink resource="jobs" to={"/jobs/" + job.id}>
-                            {job.id}
-                          </ListLink>
-                          <small>{job.source}</small>
-                          <small>{timestamp(job.created_at)}</small>
-                        </td>
-                        <td>
-                          {job.ref || "—"}
-                          <small className="mono">
-                            {job.resolved_commit
-                              ? t("확정: ", "Resolved: ") + job.resolved_commit
-                              : job.target_commit
-                                ? t("요청: ", "Requested: ") + job.target_commit
-                                : "—"}
-                          </small>
-                        </td>
-                        <td>
-                          {job.profile}
-                          <small>
-                            <Badge value={job.status} />
-                          </small>
-                        </td>
-                        <td>
-                          <Badge value={job.verdict} />
-                          <span aria-hidden="true"> → </span>
-                          <Badge value={job.effective_verdict} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-            <ListLink
-              resource="jobs"
-              to={"/jobs/" + currentId + "?tab=history"}
-            >
-              {t("대상 이력으로", "Back to source history")}
-            </ListLink>
-          </>
-        )}
-      </State>
-    </State>
   );
 }

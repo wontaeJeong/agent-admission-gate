@@ -2142,3 +2142,17 @@ tbody tr:hover {
   padding: 0 22px 18px;
   overflow-wrap: anywhere;
 }
+
+.scan-comparison {
+  margin-bottom: 1rem;
+}
+.scan-comparison td {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 700px) {
+  .scan-comparison table {
+    min-width: 1000px;
+    table-layout: fixed;
+  }
+}

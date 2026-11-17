@@ -72,10 +72,13 @@
 
 **인터페이스:** compare_jobs(baseline, current, *, allow_unlinked=False) -> ComparisonDTO. GET /api/scans/{id}/compare?baseline_id=&allow_unlinked=. DTO는 baseline/current/comparability/summary/items, item은 classification/baseline_finding/current_finding/change_flags/confidence를 가진다.
 
-- [ ] **1. 비교 fixture 고정:** test_identical_fingerprint_persists, test_line_move_is_candidate, test_ambiguous_match_stays_unmatched, test_exception_is_not_remediation, test_incomplete_engine_has_no_resolved_count, test_missing_provenance_is_unknown, test_other_side_hidden을 작성한다.
-- [ ] **2. 실패 확인:** uv run pytest backend/tests/test_scan_comparison.py -q.
-- [ ] **3. 비교 구현:** 동일 fingerprint의 중복을 dict로 소실시키지 않고 배열로 대조한다. 남은 engine/rule/path/title이 유일한1:1일 때만 moved_candidate로 묶는다. 나머지는 new/not_observed/unmatched, severity/suppressed는 별도 flag로 표시한다. 과거 provenance는 null로 남긴다.
-- [ ] **4. API·화면 구현:** 양쪽 owner/source/Git identity와 완료 상태를 확인하고 미연결 ZIP은 별도 확인을 요구한다. 상단에 profile/policy/revision/coverage/unknown 차이를 보여준다. 실패·취소는 메타데이터만 보여주고 해결 수를 만들지 않는다.
+- [x] **1. 비교 fixture 고정:** test_identical_fingerprint_persists, test_line_move_is_candidate, test_ambiguous_match_stays_unmatched, test_exception_is_not_remediation, test_incomplete_engine_has_no_resolved_count, test_missing_provenance_is_unknown, test_other_side_hidden을 작성한다.
+- [x] **2. 실패 확인:** uv run pytest backend/tests/test_scan_comparison.py -q.
+- [x] **3. 비교 구현:** 동일 fingerprint의 중복을 dict로 소실시키지 않고 배열로 대조한다. 남은 engine/rule/path/title이 유일한1:1일 때만 moved_candidate로 묶는다. 나머지는 new/not_observed/unmatched, severity/suppressed는 별도 flag로 표시한다. 과거 provenance는 null로 남긴다.
+- [x] **4. API·화면 구현:** 양쪽 owner/source/Git identity와 완료 상태를 확인하고 미연결 ZIP은 별도 확인을 요구한다. 상단에 profile/policy/revision/coverage/unknown 차이를 보여준다. 실패·취소는 메타데이터만 보여주고 해결 수를 만들지 않는다.
 - [ ] **5. PR:** 모든 분류·권한·frontend build·scan-compare E2E와 각1,000건 결과의 유한 처리를 확인한다. 줄 이동·coverage 누락·예외 차이·모바일 이미지와 함께 feat: compare scan evidence with explicit limitations로 커밋·PR을 만든다.
 
 **완료:** F05. 비교는 Job/Review/Exception을 갱신하지 않는다.
+
+
+**B3 구현 인계:** B2는 [PR24](https://github.com/wontaeJeong/agent-admission-gate/pull/24)로 병합되었다. 기존 /jobs/{current_id}/compare?baseline={baseline_id}의 SelectedScans/SelectedPair를 ScanCompare로 교체했다. 이력 탭과 SSO 필터·원래 목록 복귀 계약은 유지한다. Scans.tsx에 별도 경로를 추가할 필요 없이 기존 B2 이력 진입을 재사용한다. API가 양쪽 조회 권한을 확인한 뒤 단일 DTO를 반환하며, 실패·취소의 summary는 null이다. engine_version/database_version은 저장된 값만 사용하고 미보고는 null로 둔다. 설치 환경이나 현재 엔진으로 과거 출처를 추정하지 않는다. 구현 커밋과 검증 보고 뒤 독립 검토·PR은 컨트롤러가 수행한다.

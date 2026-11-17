@@ -49,6 +49,38 @@ async function login(page: Page) {
   ).toBeVisible();
 }
 async function mocks(page: Page) {
+  await page.route("**/api/scans/current/compare?*", (route) =>
+    new URL(route.request().url()).searchParams.get("baseline_id") === "hidden"
+      ? route.fulfill({ status: 404, json: { detail: "Scan not found" } })
+      : route.fulfill({
+          json: {
+            baseline: {
+              ...row("old"),
+              policy_version: null,
+              scanner_revision: null,
+              content_hash: null,
+            },
+            current: {
+              ...row("current", 2),
+              status: "FAILED",
+              policy_version: null,
+              scanner_revision: null,
+              content_hash: null,
+            },
+            comparability: {
+              same_source: true,
+              same_profile: true,
+              same_policy: null,
+              same_scanner_revision: null,
+              coverage_complete: false,
+              provenance_known: false,
+            },
+            summary: null,
+            items: [],
+          },
+        }),
+  );
+
   await page.route(/\/api\/scans\/(?:old|current)$/, (route) =>
     route.fulfill({
       json: row(
@@ -129,12 +161,15 @@ test("history selects baseline/current, handles comparison entry and retains ori
     .click();
   await expect(page).toHaveURL(/\/jobs\/current\/compare\?baseline=old$/);
   await expect(
-    page.getByRole("heading", { name: "Selected scans", exact: true }),
+    page.getByRole("heading", { name: "Scan comparison", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Metadata only. Findings are not compared.", {
-      exact: true,
-    }),
+    page.getByText(
+      "A scan failed or was cancelled. Only stored metadata is shown.",
+      {
+        exact: true,
+      },
+    ),
   ).toBeVisible();
   await capture(page, "pair-desktop-dark");
   await page.getByRole("link", { name: "Back to scans", exact: true }).click();
@@ -267,7 +302,9 @@ test("history read error retries and denied pair never shows either scan metadat
     route.fulfill({ status: 404, json: { detail: "Scan not found" } }),
   );
   await page.goto(provider.origin + "/jobs/current/compare?baseline=hidden");
-  await expect(page.getByText("Scan not found", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("One or both scans are unavailable.", { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("table")).toHaveCount(0);
   await capture(page, "pair-denied-desktop-dark");
   await page.goto(provider.origin + "/jobs/current/compare?baseline=current");
