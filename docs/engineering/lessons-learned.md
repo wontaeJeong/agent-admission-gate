@@ -456,3 +456,21 @@
 - The first unlinked-ZIP confirmation capture showed Loading because absence of tables also holds while a request is pending. Wait for the actual confirmation button before capture; screenshots must assert the intended state, not merely absence of the next state.
 
 - Running the combined B2/B3 focused suite with capture enabled also regenerated three existing B2 images. Restored those task-generated changes from the clean base; kept only the new B3 evidence. Limit capture-enabled runs to the intended feature spec and use capture-disabled regression runs for predecessor specs.
+
+
+## 2026-11-17 — E2 authorized search implementation checks
+
+- Initial discovery assumed nonexistent source_query/routes_reviews and some frontend helper filenames. Those reads failed without mutations; inventory and existing imports located job_query/review_query/findingSelection. Inspect actual filenames before opening guessed paths.
+- The first synthetic Job fixture omitted required profile, so initial failures tested fixture construction. Added the explicit static profile and reran RED to verify missing search modules/routes instead. Ensure required model fields are complete before interpreting RED.
+- Initial browser runs stopped at the test provider's self-signed HTTPS page, before search assertions. Traced auth config and rendered URL, then matched the existing OIDC fixture's ignoreHTTPSErrors test context. This setting is test-only; production TLS/auth is unchanged. Recheck provider context before attributing browser failures to UI.
+- A manually obsolete FindingIndex row with a current Job version exposed a false complete result. RED asserted unknown total; a shared pending-index predicate now includes stale row schema versions for both reads and backfill. Test both job and row version boundaries.
+- Initial lint found imports appended below test functions. Moved the imported shared fixture to the module import block and used the scoped Ruff formatter. Keep shared fixture imports at the top.
+- First benchmark next-page EXPLAIN used only the anchor job, while HTTP used the complete timestamp/ID/ordinal OR predicate. Changed the measured query to the exact keyset expression. Query plans must describe the same statement as the measured request.
+- A multi-file edit call failed JavaScript parsing because a literal Markdown backtick ended its String.raw template. No shell mutation ran; removed the embedded delimiter and reran. Keep multiline shell source free of unescaped host-language delimiters.
+
+- Root screenshot QA found scans/reviews captures byte-identical: the assertion used their shared source label and accepted outgoing content before navigation settled. Required type=reviews, selected tab, review ID and reason before capture; focused test passed with distinct review evidence. Every capture needs state-specific assertions.
+- Self-review identified an unbounded forged cursor ordinal reaching SQLite INTEGER binding. Reproduced OverflowError, then bounded ordinals to the schema integer range and mapped numeric decode overflow to 422. Validate cursor scalar ranges before database binding.
+
+- Final source review found search tab styling used active while the existing shared tabs stylesheet expects selected. Reused the established selected class without new colors; aria-selected stays the semantic boundary. Match existing component class contracts before validating visual states.
+
+- Independent review visibility also applies to the live review status joined into finding snippets. A synthetic different-requester record was invisible through the original review GET but its status appeared in a finding snippet. RED reproduced this; reused review_queue_predicates inside the outer join so source access cannot grant review projection access.

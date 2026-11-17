@@ -220,3 +220,16 @@ export type ComparisonDTO = {
     confidence: "exact" | "candidate" | "unmatched";
   }[];
 };
+
+export type SearchResponse = {
+  items: {
+    kind: "scans" | "reviews" | "findings";
+    id: string;
+    label: string;
+    safe_snippet: string;
+    href: string;
+  }[];
+  next_cursor: string | null;
+  total: number | null;
+  index_complete: boolean;
+};

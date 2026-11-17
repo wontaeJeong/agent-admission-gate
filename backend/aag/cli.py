@@ -145,3 +145,18 @@ def prune_notifications(batch_size: int = typer.Option(5000, min=1, max=50000)):
         typer.echo(f"Deleted {deleted} expired notifications")
     finally:
         db.engine.dispose()
+
+
+@app.command()
+def reindex_findings(batch_size: int = typer.Option(100, min=1, max=1000)):
+    """Backfill safe finding search projections (operator DB access)."""
+    from .config import get_settings
+    from .db import Database
+    from .search_index import reindex_findings as reindex
+
+    db = Database(get_settings().database_url)
+    try:
+        count = sum(reindex(db, batch_size=batch_size))
+        typer.echo(f"Indexed {count} completed scans")
+    finally:
+        db.engine.dispose()

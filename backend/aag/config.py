@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="AAG_", env_file=".env", extra="ignore")
+    search_enabled: bool = False
     review_workflow_enabled: bool = False
     environment: Literal["development", "stg", "prod", "test"] = "development"
     database_url: str = "sqlite:///./data/aag.db"

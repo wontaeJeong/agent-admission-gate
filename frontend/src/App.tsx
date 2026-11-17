@@ -38,6 +38,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { api, APIError, send, sendAsAccount, type User } from "./api";
+import { SearchEntry } from "./SearchEntry";
 import { Brand, syncFavicon } from "./Brand";
 import { sessionCoordinator, publishAccountObservation } from "./session";
 import {
@@ -50,6 +51,9 @@ import { AppContext } from "./context";
 import { ErrorMessage, State } from "./components";
 import { Landing } from "./pages/Landing";
 import { NotificationBell, NotificationProvider } from "./notifications";
+const Search = lazy(() =>
+  import("./pages/Search").then((m) => ({ default: m.Search })),
+);
 const Dashboard = lazy(() =>
   import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })),
 );
@@ -511,6 +515,7 @@ export default function App() {
                 <span className="dot" />
                 {config.environment}
               </span>
+              {config.search_enabled && <SearchEntry />}
               <NotificationBell />
               <Link to="/guide" aria-label={t("도움말", "Help")}>
                 <CircleHelp size={17} />
@@ -535,6 +540,9 @@ export default function App() {
               >
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
+                  {config.search_enabled && (
+                    <Route path="/search" element={<Search />} />
+                  )}
                   <Route path="/new" element={<NewScan />} />
                   <Route path="/jobs" element={<Jobs />} />
                   <Route path="/jobs/:id" element={<JobDetail />} />

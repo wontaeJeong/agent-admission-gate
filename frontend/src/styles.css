@@ -2156,3 +2156,21 @@ tbody tr:hover {
     table-layout: fixed;
   }
 }
+
+.search-results {
+  display: grid;
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.search-results article {
+  min-width: 0;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+}
+.search-results h2 {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+.search-results p {
+  white-space: pre-wrap;
+}
