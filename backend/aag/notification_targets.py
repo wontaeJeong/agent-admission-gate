@@ -48,15 +48,19 @@ EVENT_PREFERENCE = {
 }
 
 
-def target_visibility(resource_type, resource_id, kind):
-    """Correlated to User; shared by delivery and every inbox read/write."""
+def target_visibility(resource_type, resource_id, kind, *, actor=None):
+    """Live User authority, capped by the authenticated Actor for inbox requests."""
     if isinstance(resource_type, str):
         resource_type = literal(resource_type)
     if isinstance(resource_id, str):
         resource_id = literal(resource_id)
     if isinstance(kind, str):
         kind = literal(kind)
-    staff = or_(User.role == "admin", User.reviewer.is_(True))
+    # OIDC group intersection can lower Actor privileges without changing User.
+    # Delivery has no requesting actor; reads/writes must honor both ceilings.
+    admin = and_(User.role == "admin", actor is None or actor.role == "admin")
+    reviewer = and_(User.reviewer.is_(True), actor is None or actor.reviewer)
+    staff = or_(admin, reviewer)
     scan = (
         select(Job.id)
         .where(Job.id == resource_id, or_(Job.owner_id == User.id, staff))
@@ -69,7 +73,7 @@ def target_visibility(resource_type, resource_id, kind):
         .where(
             Review.id == resource_id,
             or_(staff, and_(Job.owner_id == User.id, Review.requester_id == User.id)),
-            or_(kind != "review.requested", and_(User.reviewer.is_(True), User.id != Job.owner_id)),
+            or_(kind != "review.requested", and_(reviewer, User.id != Job.owner_id)),
         )
         .correlate(User, Notification)
         .exists()
@@ -88,7 +92,7 @@ def target_visibility(resource_type, resource_id, kind):
         .where(
             ExceptionRule.id == resource_id,
             ExceptionRule.created_by == User.id,
-            User.role == "admin",
+            admin,
         )
         .correlate(User, Notification)
         .exists()

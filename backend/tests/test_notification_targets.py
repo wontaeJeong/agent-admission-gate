@@ -421,3 +421,129 @@ def test_target_projection_uses_same_authorized_snapshot(targets, monkeypatch):
     data = inbox(client)
     assert data["items"][0]["source"] == "Build integration"
     assert "Foreign updated label" not in str(data)
+
+
+@pytest.mark.parametrize(
+    ("role", "reviewer", "remaining_groups", "hidden_kinds"),
+    [
+        ("admin", False, [], {"exception.expired", "comment.created", "review.claimed"}),
+        ("user", True, [], {"review.requested", "comment.created", "review.claimed"}),
+        ("admin", True, ["group-admin"], {"review.requested"}),
+        ("admin", True, ["group-reviewer"], {"exception.expired"}),
+    ],
+)
+def test_effective_oidc_qualification_bounds_every_inbox_operation(
+    workflow, monkeypatch, role, reviewer, remaining_groups, hidden_kinds
+):
+    from aag.models import Review
+    from test_identity_lifecycle import setup_keycloak
+
+    app, client, _ = workflow
+    # Exercise authenticate/check_identity's real intersection; mock only the
+    # existing external Keycloak/upstream HTTP boundary.
+    identity, user_id, _ = setup_keycloak(app, monkeypatch, role=role, reviewer=reviewer)
+    account_headers = {
+        "Origin": "http://localhost:8000",
+        "Cookie": "aag_session=session-token",
+        "X-AAG-Account": user_id,
+    }
+    with app.state.db.session.begin() as s:
+        own_job = Job(
+            id="oidc-own-job",
+            owner_id=user_id,
+            source="own.zip",
+            source_type="upload",
+            profile="static",
+            status="COMPLETED",
+        )
+        s.add(own_job)
+        s.flush()
+        s.add(
+            Review(
+                id="oidc-own-review", job_id=own_job.id, requester_id=user_id, reason="Own review"
+            )
+        )
+        s.add(
+            ExceptionRule(
+                id="oidc-own-exception",
+                created_by=user_id,
+                source="own.zip",
+                reason="Synthetic exception",
+                fingerprint="a" * 64,
+                content_hash="b" * 64,
+                expires_at=time.time() - 1,
+            )
+        )
+        s.flush()
+        key = s.scalar(select(APIKey).where(APIKey.owner_id == user_id))
+        events = [
+            ("scan.completed", "scan", own_job.id),
+            ("review.approved", "review", "oidc-own-review"),
+            ("key.expiring_1d", "api_key", key.id),
+            ("comment.created", "scan", "job"),
+            ("review.claimed", "review", "review"),
+        ]
+        if role == "admin":
+            events.append(("exception.expired", "exception", "oidc-own-exception"))
+        if reviewer:
+            events.append(("review.requested", "review", "review"))
+        for kind, resource_type, resource_id in events:
+            emit(s, kind, resource_type, resource_id, [user_id], kind)
+
+    before = client.get("/api/notifications", headers=account_headers).json()
+    assert before["total"] == len(events)
+    identity["upstream_groups"] = ["group-access", *remaining_groups]
+    me = client.get("/api/auth/me", headers=account_headers).json()
+    assert me["role"] == ("admin" if "group-admin" in remaining_groups else "user")
+    assert me["reviewer"] == ("group-reviewer" in remaining_groups)
+    with app.state.db.session() as s:
+        stored = s.get(User, user_id)
+        assert stored.active and stored.role == role and stored.reviewer == reviewer
+
+    response = client.get("/api/notifications", headers=account_headers)
+    assert response.status_code == 200
+    after = response.json()
+    expected_kinds = {kind for kind, _, _ in events} - hidden_kinds
+    assert {n["kind"] for n in after["items"]} == expected_kinds
+    assert (
+        after["total"]
+        == after["unread_count"]
+        == after["filtered_unread_count"]
+        == len(expected_kinds)
+    )
+    assert client.get("/api/notifications/unread-count", headers=account_headers).json() == {
+        "unread_count": len(expected_kinds)
+    }
+    for n in before["items"]:
+        if n["kind"] in hidden_kinds:
+            for change in ({"read": True}, {"archived": True}, {"archived": False}):
+                assert (
+                    client.patch(
+                        "/api/notifications/" + n["id"], headers=account_headers, json=change
+                    ).status_code
+                    == 404
+                )
+    marked = client.post(
+        "/api/notifications/read-all",
+        headers=account_headers,
+        json={"before": before["snapshot_at"], "through": before["snapshot_sequence"]},
+    )
+    assert marked.status_code == 200 and marked.json()["updated"] == len(expected_kinds)
+    with app.state.db.session() as s:
+        rows = s.scalars(select(Notification).where(Notification.recipient_id == user_id)).all()
+        for n in rows:
+            assert (n.read_at is None) == (n.kind in hidden_kinds)
+            assert n.archived_at is None
+    own_key = next(n for n in after["items"] if n["kind"] == "key.expiring_1d")
+    assert (
+        client.patch(
+            "/api/notifications/" + own_key["id"], headers=account_headers, json={"archived": True}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.patch(
+            "/api/notifications/" + own_key["id"], headers=account_headers, json={"archived": False}
+        ).status_code
+        == 200
+    )

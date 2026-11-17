@@ -106,7 +106,7 @@ def visible_notifications(a, now):
         .where(
             User.id == a.id,
             target_visibility(
-                Notification.resource_type, Notification.resource_id, Notification.kind
+                Notification.resource_type, Notification.resource_id, Notification.kind, actor=a
             ),
         )
         .correlate(Notification)
