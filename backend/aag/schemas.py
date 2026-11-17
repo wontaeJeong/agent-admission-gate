@@ -105,3 +105,13 @@ class ReviewClaim(BaseModel):
 
 class ReviewRelease(ReviewClaim):
     reason: str | None = Field(default=None, min_length=5, max_length=4000)
+
+
+class ReviewChange(ReviewClaim):
+    reason: str = Field(min_length=5, max_length=4000)
+
+    @model_validator(mode="after")
+    def meaningful_reason(self):
+        if len(self.reason.strip()) < 5:
+            raise ValueError("A reason of 5–4000 characters is required")
+        return self

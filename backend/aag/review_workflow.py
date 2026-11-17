@@ -9,7 +9,7 @@ first write serializes before the initial read, avoiding snapshot upgrades.
 import time
 
 from fastapi import HTTPException
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import and_, case, or_, select, update
 
 from .db import audit, record
 from .models import Job, Review, ReviewEvent, User
@@ -68,9 +68,14 @@ def event(s, actor, r, kind, before, after, reason=None):
 
 
 def transition_review(s, actor, review_id, expected_revision, action, reason=None):
-    user = current_actor(s, actor, reviewer=action == "claim")
+    user = current_actor(s, actor, reviewer=action in {"claim", "request_changes"})
     r = visible_review(s, actor, review_id)
     before = r.workflow_state
+    previous_assignee = r.assignee_id
+    if action in {"withdraw", "request_changes", "respond"} and (
+        not reason or not 5 <= len(reason.strip()) <= 4000
+    ):
+        raise HTTPException(422, "A reason of 5–4000 characters is required")
     predicates = [
         Review.id == review_id,
         Review.revision == expected_revision,
@@ -117,6 +122,36 @@ def transition_review(s, actor, review_id, expected_revision, action, reason=Non
             "claimed_at": None,
             "workflow_state": "changes_requested" if before == "changes_requested" else "waiting",
         }
+    elif action == "request_changes":
+        if r.assignee_id != actor.id or r.requester_id == actor.id:
+            raise HTTPException(403, "Only the assigned reviewer can request changes")
+        predicates += [Review.assignee_id == actor.id, Review.workflow_state == "in_review"]
+        values = {"workflow_state": "changes_requested"}
+    elif action in {"withdraw", "respond"}:
+        if r.requester_id != actor.id:
+            raise HTTPException(403, "Only the requester can change this request")
+        predicates.append(Review.requester_id == actor.id)
+        if action == "withdraw":
+            values = {"status": "withdrawn", "workflow_state": "closed", "closed_reason": reason}
+        else:
+            predicates.append(Review.workflow_state == "changes_requested")
+            # Evaluate current qualification in the CAS statement, without taking
+            # a second actor lock after Review (which would invert lock ordering).
+            valid_assignee = (
+                select(User.id)
+                .where(
+                    User.id == Review.assignee_id,
+                    User.active.is_(True),
+                    User.reviewer.is_(True),
+                    User.id != Review.requester_id,
+                )
+                .exists()
+            )
+            values = {
+                "workflow_state": case((valid_assignee, "in_review"), else_="waiting"),
+                "assignee_id": case((valid_assignee, Review.assignee_id), else_=None),
+                "claimed_at": case((valid_assignee, Review.claimed_at), else_=None),
+            }
     else:
         raise HTTPException(422, "Unsupported transition")
     changed = s.execute(
@@ -124,9 +159,26 @@ def transition_review(s, actor, review_id, expected_revision, action, reason=Non
     ).rowcount
     if changed != 1:
         raise HTTPException(409, "Review changed; reload before retrying")
-    event(s, actor, r, action, before, values["workflow_state"], reason)
-    s.flush()
     s.refresh(r)
+    event(s, actor, r, action, before, r.workflow_state, reason)
+    kind = {
+        "claim": "claimed",
+        "release": "released",
+        "request_changes": "changes_requested",
+        "respond": "responded",
+        "withdraw": "withdrawn",
+    }[action]
+    recipient = previous_assignee if action in {"respond", "withdraw"} else r.requester_id
+    emit_notification(
+        s,
+        "review." + kind,
+        s.get(Job, r.job_id),
+        [recipient] if recipient else [],
+        f"review.update:{r.id}:{r.revision}",
+        r.id,
+        actor_id=actor.id,
+    )
+    s.flush()
     return review_dto(s, r)
 
 
@@ -182,6 +234,16 @@ def decide_review(s, actor, review_id, data):
         before = "in_review"
     job.effective_verdict = "ALLOW" if data.decision == "approved" else "BLOCK"
     event(s, actor, r, data.decision, before, "closed", data.reason)
+    if unclaimed:
+        emit_notification(
+            s,
+            "review.claimed",
+            job,
+            [r.requester_id],
+            f"review.update:{r.id}:{r.revision}",
+            r.id,
+            actor_id=actor.id,
+        )
     emit_notification(
         s, "review." + data.decision, job, [r.requester_id], "review.decided:" + r.id, r.id
     )

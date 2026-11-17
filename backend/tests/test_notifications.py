@@ -141,7 +141,8 @@ def test_review_decision_notifies_requester_once(client, people, reviewable, dec
     assert client.post(f"/api/reviews/{review_id}/decision", json=body).status_code == 409
     login(client, "alice")
     data = inbox(client)
-    assert data["total"] == 1
+    assert data["total"] == 2
+    assert {item["kind"] for item in data["items"]} == {"review.claimed", f"review.{decision}"}
     assert data["items"][0]["kind"] == f"review.{decision}"
     assert data["items"][0]["href"] == f"/reviews/{review_id}"
     assert "Sensitive decision reason" not in str(data)
@@ -221,6 +222,7 @@ def test_preferences_persist_apply_to_future_only_and_reject_extra_fields(
         "scans": True,
         "review_requests": True,
         "review_results": True,
+        "review_updates": True,
         "comments": True,
     }
     response = client.put("/api/notification-preferences", json={"scans": False})

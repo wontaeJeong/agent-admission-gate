@@ -199,6 +199,17 @@ export function notificationLabel(
     "review.requested": t("새 검토 요청이 있습니다", "Review requested"),
     "review.approved": t("검토가 승인되었습니다", "Review approved"),
     "review.rejected": t("검토가 반려되었습니다", "Review rejected"),
+    "review.claimed": t("검토 담당자가 지정되었습니다", "Review assigned"),
+    "review.released": t(
+      "검토 담당자가 해제되었습니다",
+      "Review assignment released",
+    ),
+    "review.changes_requested": t(
+      "보완 요청이 있습니다",
+      "Supplement requested",
+    ),
+    "review.responded": t("설명이 보충되었습니다", "Explanation added"),
+    "review.withdrawn": t("검토 요청이 철회되었습니다", "Review withdrawn"),
     "comment.created": t("새 코멘트가 등록되었습니다", "New comment"),
   };
   return labels[kind] || t("새 알림", "New notification");

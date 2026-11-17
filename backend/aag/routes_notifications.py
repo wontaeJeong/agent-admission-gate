@@ -47,6 +47,7 @@ class PreferenceChange(NonNullPatch):
     scans: StrictBool | None = None
     review_requests: StrictBool | None = None
     review_results: StrictBool | None = None
+    review_updates: StrictBool | None = None
     comments: StrictBool | None = None
 
 

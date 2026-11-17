@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     text,
+    true,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -139,6 +140,7 @@ class Review(Base):
     workflow_state: Mapped[str] = mapped_column(
         String(24), default="waiting", server_default="waiting"
     )
+    closed_reason: Mapped[str | None] = mapped_column(Text)
     decision_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     decided_at: Mapped[float | None] = mapped_column(Float)
@@ -180,6 +182,7 @@ class NotificationPreference(Base):
     scans: Mapped[bool] = mapped_column(Boolean, default=True)
     review_requests: Mapped[bool] = mapped_column(Boolean, default=True)
     review_results: Mapped[bool] = mapped_column(Boolean, default=True)
+    review_updates: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     comments: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
