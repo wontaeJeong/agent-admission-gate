@@ -14,7 +14,9 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
     status: null as number | null,
     retryable: false,
   });
-  const [data, setData] = useState<T | null>(null),
+  const [snapshot, setSnapshot] = useState<{ path: string; value: T } | null>(
+      null,
+    ),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -25,7 +27,7 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
       try {
         const value = await api<T>(path, { signal: abort.signal });
         if (live) {
-          setData(value);
+          setSnapshot({ path, value });
           setError("");
           setRecovery({ status: null, retryable: false });
         }
@@ -36,7 +38,7 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
           setRecovery(policy);
           // Cached authorization is usable through transient reads only. A
           // denied/unknown response must not reappear while a retry is pending.
-          if (!policy.retryable) setData(null);
+          if (!policy.retryable) setSnapshot(null);
         }
       } finally {
         if (live) {
@@ -47,7 +49,7 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
     };
     setLoading(true);
     if (dataPath.current !== path) {
-      setData(null);
+      setSnapshot(null);
       dataPath.current = path;
     }
     setError("");
@@ -59,12 +61,15 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
       clearTimeout(timer);
     };
   }, [path, refresh, poll, attempt]);
+  // Effects cannot invalidate the previous result until after this render.
+  // Gate it here too, so consumers never use another request's count/content.
+  const currentRequest = dataPath.current === path;
   return {
-    data,
-    error,
-    loading,
-    errorStatus: recovery.status,
-    retryable: recovery.retryable,
+    data: snapshot?.path === path ? snapshot.value : null,
+    error: currentRequest ? error : "",
+    loading: !currentRequest || loading,
+    errorStatus: currentRequest ? recovery.status : null,
+    retryable: currentRequest && recovery.retryable,
     retry: () => setAttempt((value) => value + 1),
   };
 }

@@ -634,3 +634,129 @@ test("unknown credential query fields never enter detail return state", async ({
     await page.evaluate(() => JSON.stringify(history.state)),
   ).not.toContain("synthetic-secret");
 });
+
+test("I1 matching list response gates same-mounted Back page and scroll restoration", async ({
+  page,
+}) => {
+  await login(page);
+  const job = await (
+    await page.request.get(provider.origin + "/api/scans/a1-synthetic-job")
+  ).json();
+  let delayBroad = false,
+    release!: () => void,
+    requested!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const pending = new Promise<void>((resolve) => {
+    requested = resolve;
+  });
+  await page.route("**/api/scans?**", async (route) => {
+    const params = new URL(route.request().url()).searchParams;
+    const broad = params.get("verdict") === "BLOCK";
+    if (broad && delayBroad) {
+      requested();
+      await gate;
+    }
+    await route.fulfill({
+      json: {
+        total: broad ? 76 : 1,
+        page_size: 25,
+        items: broad
+          ? Array.from({ length: 25 }, (_, i) => ({
+              ...job,
+              id: `broad-${i}`,
+              source: `broad-source-${50 + i}.zip`,
+            }))
+          : [{ ...job, source: "restrictive-source.zip" }],
+      },
+    });
+  });
+  const broadPath = "/jobs?scope=personal&verdict=BLOCK&page=3";
+  await page.goto(provider.origin + broadPath);
+  await expect(
+    page.getByText("broad-source-67.zip", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => window.scrollTo(0, 900));
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeGreaterThan(500);
+  const scroll = await page.evaluate(() => window.scrollY);
+  await page.getByLabel("Verdict", { exact: true }).selectOption("ALLOW");
+  await expect(
+    page.getByText("restrictive-source.zip", { exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(/verdict=ALLOW&page=1/);
+  delayBroad = true;
+  await page.goBack();
+  await pending;
+  await expect(page).toHaveURL(provider.origin + broadPath);
+  await expect(
+    page.getByText("restrictive-source.zip", { exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("broad-source-67.zip", { exact: true }),
+  ).toHaveCount(0);
+  release();
+  await expect(
+    page.getByText("broad-source-67.zip", { exact: true }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(provider.origin + broadPath);
+  await expect
+    .poll(() => page.evaluate(() => window.scrollY))
+    .toBeGreaterThan(scroll - 60);
+});
+
+test("I2 cross-document Back without BFCache preserves the original queryless list", async ({
+  page,
+}) => {
+  await login(page);
+  await page.goto(provider.origin + "/jobs");
+  await expect(
+    page.getByText("No saved views.", { exact: true }),
+  ).toBeVisible();
+  await page.evaluate(() => {
+    (window as any).__a3OriginalDocument = true;
+    // Chromium excludes unload listeners from BFCache in this test context.
+    window.addEventListener("unload", () => {});
+  });
+  await page.route("**/a3-other-document", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Other synthetic document</title><p>Outside the application</p>",
+      headers: { "Cache-Control": "no-store" },
+    }),
+  );
+  await page.goto(provider.origin + "/a3-other-document");
+  await create(
+    page,
+    "Changed while away",
+    { version: 1, scope: "personal", verdict: "BLOCK" } as {
+      version: number;
+      scope: string;
+    },
+    true,
+  );
+  await page.goBack();
+  await expect(
+    page.getByRole("button", { name: "Apply · Changed while away" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => (window as any).__a3OriginalDocument),
+  ).toBeUndefined();
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          performance.getEntriesByType(
+            "navigation",
+          )[0] as PerformanceNavigationTiming
+        ).type,
+    ),
+  ).toBe("back_forward");
+  await expect(page).toHaveURL(provider.origin + "/jobs");
+  await expect(page.getByLabel("Verdict", { exact: true })).toHaveValue("");
+  // A reload of that same retained entry is a fresh entry, so current default wins.
+  await page.reload();
+  await expect(page).toHaveURL(/verdict=BLOCK/);
+});

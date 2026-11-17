@@ -94,3 +94,94 @@ export function filtersToSearch(filters: ViewFilters): URLSearchParams {
       .map(([key, value]) => [key, String(value)]),
   );
 }
+
+const entryIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+type ListEntry = ListState & { entryId: string };
+const entriesKey = (accountId: string, resource: ListResource) =>
+  `aag-list-entries:${accountId}:${resource}`;
+function listEntries(accountId: string, resource: ListResource): ListEntry[] {
+  try {
+    const stored = JSON.parse(
+      sessionStorage.getItem(entriesKey(accountId, resource)) || "[]",
+    );
+    if (!Array.isArray(stored)) return [];
+    return stored.flatMap((value) => {
+      const state = validListState(value, accountId, resource);
+      return state &&
+        typeof value.entryId === "string" &&
+        entryIdPattern.test(value.entryId)
+        ? [
+            {
+              accountId,
+              resource,
+              entryId: value.entryId,
+              list_url: state.list_url,
+              scroll_y: state.scroll_y,
+            },
+          ]
+        : [];
+    });
+  } catch {
+    return [];
+  }
+}
+/** The history state contains only an opaque UUID; URLs live in validated tab storage. */
+export function currentListEntryId(): string | null {
+  try {
+    const stored = history.state?.aagListEntryId;
+    if (typeof stored === "string" && entryIdPattern.test(stored))
+      return stored;
+    const entryId = crypto.randomUUID();
+    history.replaceState({ ...history.state, aagListEntryId: entryId }, "");
+    return entryId;
+  } catch {
+    return null;
+  }
+}
+export function rememberListEntry(
+  accountId: string,
+  resource: ListResource,
+  entryId: string | null,
+  url: string,
+  scrollY: number,
+) {
+  const state = validListState(
+    { accountId, resource, list_url: url, scroll_y: scrollY },
+    accountId,
+    resource,
+  );
+  if (!state || !entryId || !entryIdPattern.test(entryId)) return;
+  const entries = listEntries(accountId, resource).filter(
+    (entry) => entry.entryId !== entryId,
+  );
+  entries.push({ ...state, entryId });
+  try {
+    sessionStorage.setItem(
+      entriesKey(accountId, resource),
+      JSON.stringify(entries),
+    );
+  } catch {
+    /* Router state remains available if tab storage is blocked. */
+  }
+}
+export function restoreListEntry(
+  accountId: string,
+  resource: ListResource,
+  entryId: string | null,
+  url: string,
+): ListState | null {
+  if (!entryId || !entryIdPattern.test(entryId) || !validURL(resource, url))
+    return null;
+  const entry = listEntries(accountId, resource).find(
+    (entry) => entry.entryId === entryId && entry.list_url === url,
+  );
+  return entry
+    ? {
+        accountId,
+        resource,
+        list_url: entry.list_url,
+        scroll_y: entry.scroll_y,
+      }
+    : null;
+}

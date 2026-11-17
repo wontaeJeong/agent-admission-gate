@@ -1,8 +1,10 @@
-import { beforeEach, expect, it } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import {
   filtersFromSearch,
   filtersToSearch,
   rememberList,
+  rememberListEntry,
+  restoreListEntry,
   restoreList,
   validListState,
 } from "./listNavigation";
@@ -66,4 +68,39 @@ it("saves only versioned filters and excludes transient page position", () => {
   expect(
     filtersToSearch({ version: 1, scope: "personal", days: 7 }).toString(),
   ).toBe("scope=personal&days=7");
+});
+
+it("keeps validated history entries separate across queries and document recreation", async () => {
+  const broad = "11111111-1111-4111-8111-111111111111",
+    narrow = "22222222-2222-4222-8222-222222222222";
+  rememberListEntry("alice", "jobs", broad, "/jobs?scope=personal&page=3", 900);
+  rememberListEntry(
+    "alice",
+    "jobs",
+    narrow,
+    "/jobs?scope=personal&verdict=ALLOW&page=1",
+    0,
+  );
+  vi.resetModules();
+  const reloaded = await import("./listNavigation");
+  expect(
+    reloaded.restoreListEntry(
+      "alice",
+      "jobs",
+      broad,
+      "/jobs?scope=personal&page=3",
+    )?.scroll_y,
+  ).toBe(900);
+  expect(
+    restoreListEntry("bob", "jobs", broad, "/jobs?scope=personal&page=3"),
+  ).toBeNull();
+  expect(restoreListEntry("alice", "reviews", broad, "/reviews")).toBeNull();
+  expect(restoreListEntry("alice", "jobs", broad, "/jobs")).toBeNull();
+});
+it("does not persist unsafe URL or arbitrary history identity fields", () => {
+  const entry = "11111111-1111-4111-8111-111111111111";
+  rememberListEntry("alice", "jobs", entry, "/jobs?token=synthetic", 10);
+  rememberListEntry("alice", "jobs", "token=synthetic", "/jobs", 10);
+  expect([...values.values()].join("")).not.toContain("synthetic");
+  expect(restoreListEntry("alice", "jobs", entry, "/jobs")).toBeNull();
 });

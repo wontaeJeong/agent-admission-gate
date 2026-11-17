@@ -20,14 +20,17 @@ import {
   filtersFromSearch,
   filtersToSearch,
   rememberList,
+  currentListEntryId,
+  rememberListEntry,
+  restoreListEntry,
   restoreList,
   validListState,
   type ListResource,
   type ViewFilters,
 } from "./listNavigation";
 import { ErrorMessage } from "./components";
-// Only entries observed by this document are history restoration. A fresh
-// document may retain a router key, but must use the current saved default.
+// Live-document observations supplement validated entries restored from tab
+// storage after a real back/forward document navigation.
 const observedListEntries = new Set<string>();
 
 export type SavedView = {
@@ -123,6 +126,7 @@ export function useListContext(
   const [params, setParams] = useSearchParams();
   const restored = useRef("");
   useEffect(() => {
+    const entryId = currentListEntryId();
     if (!data) return;
     const last = Math.max(1, Math.ceil(data.total / (data.page_size || 25)));
     if (!Number.isInteger(page) || page < 1 || page > last) {
@@ -134,15 +138,32 @@ export function useListContext(
     const url = location.pathname + location.search;
     const context =
       validListState(location.state?.restoreList, user.id, resource) ||
-      (type === "POP" ? restoreList(user.id, resource) : null);
+      (type === "POP"
+        ? restoreListEntry(user.id, resource, entryId, url) ||
+          restoreList(user.id, resource)
+        : null);
+    const remember = () => {
+      rememberList(user.id, resource, url, window.scrollY);
+      rememberListEntry(user.id, resource, entryId, url, window.scrollY);
+    };
+    let frame = 0;
     if (restored.current !== location.key) {
-      restored.current = location.key;
-      if (context?.list_url === url)
-        requestAnimationFrame(() => window.scrollTo(0, context.scroll_y));
+      if (context?.list_url === url) {
+        frame = requestAnimationFrame(() => {
+          window.scrollTo(0, context.scroll_y);
+          restored.current = location.key;
+          remember();
+        });
+      } else {
+        restored.current = location.key;
+        remember();
+      }
     }
-    const remember = () => rememberList(user.id, resource, url, window.scrollY);
     window.addEventListener("scroll", remember, { passive: true });
-    return () => window.removeEventListener("scroll", remember);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", remember);
+    };
   }, [data, page, location, type, user.id, resource, params, setParams]);
 }
 
@@ -200,17 +221,25 @@ export function SavedViews({ resource }: { resource: ListResource }) {
     let active = true;
     const capture = sessionCoordinator.capture(),
       entry = location;
+    const entryId = currentListEntryId();
+    const url = entry.pathname + entry.search;
+    const priorEntry = restoreListEntry(user.id, resource, entryId, url);
+    const entryKey = JSON.stringify([user.id, resource, entryId]);
+    const documentRestoration =
+      (
+        performance.getEntriesByType("navigation")[0] as
+          | PerformanceNavigationTiming
+          | undefined
+      )?.type === "back_forward";
     read()
       .then((rows) => {
         if (!rows || !active || !sessionCoordinator.isCurrent(capture)) return;
-        const entryKey = JSON.stringify([
-          user.id,
-          capture.generation,
-          resource,
-          entry.key,
-        ]);
-        const restoring = type === "POP" && observedListEntries.has(entryKey);
+        const restoring =
+          type === "POP" &&
+          (observedListEntries.has(entryKey) || documentRestoration);
         observedListEntries.add(entryKey);
+        if (!priorEntry)
+          rememberListEntry(user.id, resource, entryId, url, window.scrollY);
         setViews(rows);
         setError("");
         if (
