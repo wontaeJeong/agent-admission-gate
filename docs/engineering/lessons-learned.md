@@ -488,3 +488,25 @@
 - Ruff identified the imported pytest fixture as a redefinition when its test parameter used the same name. Matched existing explicit fixture re-export syntax and reran lint; avoid suppressing only the unused-import warning for reusable fixtures.
 
 - D1 review I1 found that replacing Actor-based notification checks with live User SQL checks omitted the OIDC privilege ceiling. External group removal can lower the authenticated Actor while persisted roles remain unchanged. Eight SQLite/PostgreSQL real-auth regressions reproduced exception/reviewer/foreign-scan leakage. Inbox visibility now intersects each live admin/reviewer predicate with its effective Actor flag; owner access and delivery's existing local checks remain intact. When centralizing authorization, test both stale local grants and externally attenuated actors, including partial admin/reviewer loss, across list/count/read-all/single mutation.
+
+## 2026-11-17: D2 탐색 경로와 초기 미구현 검증
+
+- 현상: 최초 탐색에서 `docs/plans`와 `backend/alembic/versions`가 없었고, 신규 detector/CLI/UI의 RED 검증이 실패했다. 문서 작성 도구 호출 한 번은 템플릿 문자열 속 Markdown backtick 때문에 실행 전에 구문 오류가 났다.
+- 원인: 문서와 migration 위치를 일반 경로로 추정했고, 두 문자열 문법의 구분자를 겹쳐 썼다. 테스트 실패는 각각 아직 없는 감지 모듈, CLI 명령, 관리자 섹션을 검증한 의도된 RED였다.
+- 해결: 실제 `docs/superpowers/plans`, `backend/migrations/versions` 경로를 확인하고 기존 규약에 연결했다. 문서 문자열을 안전하게 구성해 재실행했다. 두 DB에서 감지 22개와 운영 중심 46개를 구현 후 검증했다.
+- 예방: 새 경로는 `rg --files`로 먼저 확인하고 도구의 JavaScript와 쉘 문자열 경계를 구분한다. 정확한 float 일정 비교는 DB 문자열 표현으로 추정하지 않고 검증된 스냅샷으로 비교하며, 활성화 시각도 프로세스 시작 시각으로 추정하지 않는다.
+
+## 2026-11-17: D2 브라우저 상태 locator 범위
+
+- 현상: 7개 시나리오 중 실패 상태와 GET 오류 검증 2개가 실패했다.
+- 원인: 실패라는 같은 문구가 운영 상태와 최근 실행에 각각 있어 strict locator가 둘을 선택했다. 기존 공통 오류 컴포넌트는 오류 본문과 재시도 안내를 같은 부모에 표시하므로 exact text로 본문만 선택할 수 없었다.
+- 해결: 실제 접근성 snapshot을 확인하고 운영 상태는 panel의 status 역할, 오류는 alert 역할 안의 본문으로 검증한다. 제품 화면이나 오류 처리를 우회하지 않았다.
+- 예방: 복수 문맥에 존재하는 문구는 역할과 영역으로 먼저 한정하고, 공통 컴포넌트의 실제 DOM/접근성 트리를 확인한 뒤 locator를 작성한다.
+- 초기 Ruff 검증은 정렬되지 않은 신규 import와 사용하지 않는 테스트 지역 변수를 지적했다. import를 정리하고 변수 할당을 제거했으며, 최종 전체 lint/format 검증을 통과했다. 새 테스트 작성 뒤 관련 lint도 함께 확인한다.
+
+## 2026-11-17: D2 CLI 설정 실패의 진단 경계
+
+- 현상: 자체 검토에서 설정 로더가 예외를 내면 안전한 집계 JSON을 출력하지 못하는 경계를 발견했고, 합성 비공개 진단으로 재현한 테스트가 실패했다.
+- 원인: 데이터베이스 생성/실행만 예외를 정제하고 그보다 앞선 설정 로딩은 보호하지 않았다.
+- 해결: 설정 로딩 실패도 원문 예외 대신 run_failed와 실패 종료 코드로 변환한다.
+- 예방: 운영 명령의 실패 테스트는 실제 처리뿐 아니라 설정 로딩·연결 생성 등 시작 전 단계도 포함하고, 예외 본문을 출력하지 않는지 검증한다.

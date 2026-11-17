@@ -9,6 +9,7 @@ from sqlalchemy import and_, case, func, or_, select
 
 from .auth import Actor, actor
 from .db import audit, record
+from .expiration_reminders import operational_status
 from .models import APIKey, Audit, ExceptionRule, Usage, User
 from .policy import RULES
 from .schemas import ExceptionRequest, Reason, UserPatch
@@ -24,8 +25,10 @@ def status(request: Request, a: Actor = Depends(actor)):
     settings = request.app.state.settings
     with request.app.state.db.session() as s:
         s.execute(select(1))
+        expiration = operational_status(s, settings, time.time())
     return {
         "database": "ok",
+        "expiration_reminders": expiration,
         "active_jobs": len(request.app.state.scans.tasks),
         "concurrency": settings.runner_concurrency,
         "queue_capacity": settings.queue_capacity,
