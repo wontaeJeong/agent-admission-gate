@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
   type ComparisonDTO,
+  type ComparisonClassification,
   type ComparisonFinding,
   type ComparisonMetadata,
   timestamp,
@@ -113,6 +114,7 @@ function Pair({
 function Comparison({ data }: { data: ComparisonDTO }) {
   const t = useText(),
     [page, setPage] = useState(1),
+    [category, setCategory] = useState<ComparisonClassification | "all">("all"),
     c = data.comparability;
   const labels = {
     persisting: t("계속 관측", "Persisting"),
@@ -124,6 +126,64 @@ function Comparison({ data }: { data: ComparisonDTO }) {
     ),
     unmatched: t("일치 여부 불명", "Unmatched"),
   };
+  const filteredItems =
+    category === "all"
+      ? data.items
+      : data.items.filter((item) => item.classification === category);
+  const selectCategory = (value: ComparisonClassification | "all") => {
+    setCategory(value);
+    setPage(1);
+  };
+  const lastFocusedCategory = useRef<string | null>(null);
+  useEffect(() => {
+    const onFocusIn = (event: FocusEvent) => {
+      const button =
+        event.target instanceof HTMLElement
+          ? event.target.closest<HTMLButtonElement>(
+              "button[data-comparison-category]",
+            )
+          : null;
+      lastFocusedCategory.current = button?.dataset.comparisonCategory ?? null;
+    };
+    const onFocusOut = (event: FocusEvent) => {
+      const button =
+        event.target instanceof HTMLElement
+          ? event.target.closest<HTMLButtonElement>(
+              "button[data-comparison-category]",
+            )
+          : null;
+      if (button && button.getClientRects().length > 0)
+        lastFocusedCategory.current = null;
+    };
+    const onResize = () => {
+      const value = lastFocusedCategory.current;
+      if (!value) return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        active !== document.body &&
+        !active.matches("button[data-comparison-category]")
+      )
+        return;
+      const buttons = document.querySelectorAll<HTMLButtonElement>(
+        "button[data-comparison-category]",
+      );
+      const visible = [...buttons].find(
+        (button) =>
+          button.dataset.comparisonCategory === value &&
+          button.getClientRects().length > 0,
+      );
+      if (visible && active !== visible) visible.focus();
+    };
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
   const limits = [
     !c.same_source &&
       t(
@@ -184,6 +244,16 @@ function Comparison({ data }: { data: ComparisonDTO }) {
           </p>
         </div>
       </section>
+      {data.summary && (
+        <Summary
+          className="comparison-summary-desktop"
+          summary={data.summary}
+          labels={labels}
+          category={category}
+          onSelect={selectCategory}
+          total={data.items.length}
+        />
+      )}
       <section className="panel scan-comparison">
         <div className="panel-heading">
           <h2>{t("저장된 검사 정보", "Stored scan metadata")}</h2>
@@ -308,18 +378,14 @@ function Comparison({ data }: { data: ComparisonDTO }) {
         </p>
       ) : (
         <>
-          <section className="panel scan-comparison">
-            <div className="panel-heading">
-              <h2>{t("관측 변화", "Observed changes")}</h2>
-            </div>
-            <div className="panel-note">
-              {Object.entries(data.summary).map(([key, count]) => (
-                <p key={key}>
-                  {labels[key as keyof typeof labels]}: {count}
-                </p>
-              ))}
-            </div>
-          </section>
+          <Summary
+            className="comparison-summary-mobile"
+            summary={data.summary}
+            labels={labels}
+            category={category}
+            onSelect={selectCategory}
+            total={data.items.length}
+          />
           {data.items.length === 0 ? (
             <Empty>
               {t(
@@ -332,79 +398,160 @@ function Comparison({ data }: { data: ComparisonDTO }) {
               <div className="panel-heading">
                 <h2>{t("발견 사항 비교", "Finding comparison")}</h2>
               </div>
-              <div
-                className="table-scroll"
-                tabIndex={0}
-                aria-label={t(
-                  "비교 표 가로 스크롤",
-                  "Scroll comparison table horizontally",
-                )}
-              >
-                <table aria-label={t("발견 사항 비교", "Finding comparison")}>
-                  <thead>
-                    <tr>
-                      <th>
-                        {t("분류 / 신뢰도", "Classification / confidence")}
-                      </th>
-                      <th>{t("기준", "Baseline")}</th>
-                      <th>{t("현재", "Current")}</th>
-                      <th>{t("별도 변경", "Separate changes")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.items
-                      .slice((page - 1) * 50, page * 50)
-                      .map((item, i) => (
-                        <tr key={i}>
-                          <td>
-                            {labels[item.classification]}
-                            <small>
-                              {item.confidence === "exact"
-                                ? t("동일 fingerprint", "Exact fingerprint")
-                                : item.confidence === "candidate"
-                                  ? t(
-                                      "후보 · 확정 일치 아님",
-                                      "Candidate · not a confirmed match",
-                                    )
-                                  : t("일치 미확인", "Match unconfirmed")}
-                            </small>
-                          </td>
-                          <td>
-                            <Finding value={item.baseline_finding} />
-                          </td>
-                          <td>
-                            <Finding value={item.current_finding} />
-                          </td>
-                          <td>
-                            {item.change_flags.length
-                              ? item.change_flags.map((flag) => (
-                                  <p key={flag}>
-                                    {flag === "severity_changed"
-                                      ? t("심각도 변경", "Severity changed")
-                                      : t(
-                                          "예외 적용 변경",
-                                          "Suppression changed",
-                                        )}
-                                  </p>
-                                ))
-                              : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
+              <div className="panel-note comparison-explanations">
+                <p>
+                  {t(
+                    "동일 fingerprint는 저장된 식별자가 일치함을 뜻합니다. 이동 후보는 같은 엔진·규칙·경로·제목을 가진 미확정 일치입니다.",
+                    "An exact fingerprint means the stored identifiers match. A moved candidate shares engine, rule, path and title but is not a confirmed match.",
+                  )}
+                </p>
+                <p>
+                  {t(
+                    "일치 여부 불명은 유일한 대응을 확인할 수 없다는 뜻입니다. 예외 적용 변경은 두 검사 사이에 예외 적용 상태가 달라졌다는 뜻입니다.",
+                    "Unmatched means a unique match could not be confirmed. Suppression changed means the exception status differs between scans.",
+                  )}
+                </p>
               </div>
-              <Pagination
-                page={page}
-                total={data.items.length}
-                size={50}
-                onChange={setPage}
-              />
+              <div className="sr-only" role="status">
+                {t(
+                  `선택한 분류: ${category === "all" ? "전체 발견" : labels[category]}, 결과 ${filteredItems.length}개`,
+                  `Selected category: ${category === "all" ? "All findings" : labels[category]}, ${filteredItems.length} results`,
+                )}
+              </div>
+              {filteredItems.length === 0 ? (
+                <Empty>
+                  {t(
+                    "이 분류에 해당하는 발견 사항이 없습니다.",
+                    "No findings in this category",
+                  )}
+                </Empty>
+              ) : (
+                <div
+                  className="table-scroll"
+                  tabIndex={0}
+                  aria-label={t(
+                    "비교 표 가로 스크롤",
+                    "Scroll comparison table horizontally",
+                  )}
+                >
+                  <table aria-label={t("발견 사항 비교", "Finding comparison")}>
+                    <thead>
+                      <tr>
+                        <th>
+                          {t("분류 / 신뢰도", "Classification / confidence")}
+                        </th>
+                        <th>{t("기준", "Baseline")}</th>
+                        <th>{t("현재", "Current")}</th>
+                        <th>{t("별도 변경", "Separate changes")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredItems
+                        .slice((page - 1) * 50, page * 50)
+                        .map((item, i) => (
+                          <tr key={i}>
+                            <td>
+                              {labels[item.classification]}
+                              <small>
+                                {item.confidence === "exact"
+                                  ? t("동일 fingerprint", "Exact fingerprint")
+                                  : item.confidence === "candidate"
+                                    ? t(
+                                        "후보 · 확정 일치 아님",
+                                        "Candidate · not a confirmed match",
+                                      )
+                                    : t("일치 미확인", "Match unconfirmed")}
+                              </small>
+                            </td>
+                            <td>
+                              <Finding value={item.baseline_finding} />
+                            </td>
+                            <td>
+                              <Finding value={item.current_finding} />
+                            </td>
+                            <td>
+                              {item.change_flags.length
+                                ? item.change_flags.map((flag) => (
+                                    <p className="comparison-change" key={flag}>
+                                      {flag === "severity_changed"
+                                        ? t("심각도 변경", "Severity changed")
+                                        : t(
+                                            "예외 적용 변경",
+                                            "Suppression changed",
+                                          )}
+                                    </p>
+                                  ))
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {filteredItems.length > 0 && (
+                <Pagination
+                  page={page}
+                  total={filteredItems.length}
+                  size={50}
+                  onChange={setPage}
+                />
+              )}
             </section>
           )}
         </>
       )}
     </>
+  );
+}
+function Summary({
+  className,
+  summary,
+  labels,
+  category,
+  onSelect,
+  total,
+}: {
+  className: string;
+  summary: NonNullable<ComparisonDTO["summary"]>;
+  labels: Record<ComparisonClassification, string>;
+  category: ComparisonClassification | "all";
+  onSelect: (value: ComparisonClassification | "all") => void;
+  total: number;
+}) {
+  const t = useText();
+  const categories = Object.keys(labels) as ComparisonClassification[];
+  return (
+    <section className={`panel scan-comparison ${className}`}>
+      <div className="panel-heading">
+        <h2>{t("관측 변화", "Observed changes")}</h2>
+      </div>
+      <div
+        className="panel-note comparison-categories"
+        role="group"
+        aria-label={t("발견 분류 필터", "Finding classification filter")}
+      >
+        <button
+          type="button"
+          data-comparison-category="all"
+          aria-pressed={category === "all"}
+          onClick={() => onSelect("all")}
+        >
+          {t("전체 발견", "All findings")} <strong>{total}</strong>
+        </button>
+        {categories.map((key) => (
+          <button
+            type="button"
+            key={key}
+            data-comparison-category={key}
+            aria-pressed={category === key}
+            onClick={() => onSelect(key)}
+          >
+            {labels[key]} <strong>{summary[key]}</strong>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 function verdict(value: string | null, t: ReturnType<typeof useText>) {
