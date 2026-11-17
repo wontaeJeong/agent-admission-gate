@@ -56,7 +56,7 @@
 | D2 만료 감지·운영 상태 | [#28](https://github.com/wontaeJeong/agent-admission-gate/pull/28) | 독립 검토·최종 CI 5개 성공 후 6f84d0b 병합 | tested caec1dc · [CI 44068553899](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44068553899) |
 | D3 키 교체·예외 재검토 | [#29](https://github.com/wontaeJeong/agent-admission-gate/pull/29) | 독립 검토·최종 CI 5개 성공 후 0172837 병합 | tested a3cc0a9 · [CI 44076378186](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44076378186) |
 
-14개 기능 PR #16–#29가 모두 병합됐다. [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)에 정확한 head·CI·실제 로컬 검증·화면·22개 판단과 비용·5개 Minor를 보존한다. 전체 검토 I1(생성 DTO 누락 복구)/I2(전달 추적)의 최종 수정은 별도 PR의 독립 범위 재검토·정확한 head 필수 CI 성공이 병합 조건이다. 운영 배포·migration·기능 활성화·실제 Cron 완료를 뜻하지 않는다.
+14개 기능 PR #16–#29가 모두 병합됐다. [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)에 정확한 head·CI·실제 로컬 검증·화면·원래 판단 22건과 최종 판단 1건의 비용·6개 Minor를 보존한다. 전체 검토 I1(생성 DTO 누락 복구)/I2(전달 추적)의 최종 수정은 별도 PR의 독립 범위 재검토·정확한 head 필수 CI 성공이 병합 조건이다. 운영 배포·migration·기능 활성화·실제 Cron 완료를 뜻하지 않는다.
 
 ## 10개 기능 추적표
 

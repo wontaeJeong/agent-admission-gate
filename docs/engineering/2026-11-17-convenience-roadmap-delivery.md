@@ -73,10 +73,10 @@ C1/C2/C3는 각각 대표 10개를 검토했고 추가 색상/크기 변형 전�
 
 최초 전체 검토는 **Critical 0, Important 2, 비차단 Minor 5, 수정 후 합류 가능**이었다. 권한/트랜잭션·fail-closed·22개 판단을 함께 검토했으며 14개 기능 검토를 반복한 것은 아니다.
 
-- **I1 — 성공 HTTP의 생성 DTO 누락:** 기존 api()는 성공 JSON 해석 실패를 빈 객체로 바꿔 새 검사/재검사/검토 요청/C3 후속 요청/새 게시글이 초안을 지우고 undefined 대상으로 이동할 수 있었다. 이번 수정은 본문 해석 실패를 불명확한 결과로 처리하고 생성 ID 확인 뒤에만 강한 receipt 초기화·이동을 허용한다. 명시적인 HTTP 204/205 무본문과 text 응답은 유지한다. 새 검토/게시글에도 명시적인 현재 리소스 GET을 제공하고 그 전 재제출을 막는다. polling이 새 검토를 발견해도 입력은 유지한다. 잘못된 GET DTO는 확인 완료가 아니다. 게시글의 확인 GET은 주변 현재 목록도 갱신하며 새 입력을 지우지 않는다.
+- **I1 — 성공 HTTP의 생성 DTO 누락:** 기존 api()는 성공 JSON 해석 실패를 빈 객체로 바꿔 새 검사/재검사/검토 요청/C3 후속 요청/새 게시글이 초안을 지우고 undefined 대상으로 이동할 수 있었다. 이번 수정은 본문 해석 실패를 불명확한 결과로 처리하고 생성 ID 확인 뒤에만 강한 receipt 초기화·이동을 허용한다. 명시적인 HTTP 204/205 무본문과 text 응답은 유지한다. 새 검토/게시글에도 명시적인 현재 리소스 GET을 제공하고 그 전 재제출을 막는다. polling이 새 검토를 발견해도 입력은 유지한다. 필수 ID가 누락된 GET 응답은 확인 완료로 처리하지 않는다. 검토 상태의 잘못된 falsy 값에 대한 잔여 처리는 아래 M6에 남긴다. 게시글의 확인 GET은 주변 현재 목록도 갱신하며 새 입력을 지우지 않는다.
 - **I2 — 오래된 전달 추적:** 이 문서와 로드맵·A/B/C/D/E 원본 플랜·요구사항을 14개 실제 병합으로 맞췄다. ignored 실행 파일만을 근거 링크로 쓰지 않는다. 이전 판단/비용·Minor·운영하지 않은 영역을 남긴다.
 
-수정 브랜치는 fix/convenience-final-response-recovery, 기준은 PR #29 squash다. 이 문서가 포함된 **최종 수정 PR의 독립 범위 재검토와 정확한 최종 head 필수 CI 5개 성공이 병합 조건**이다. 해당 PR에 실제 수정 head·검토 결과·CI run·병합 SHA를 기록한다. 아직 생성되지 않은 PR 번호나 미래 CI/병합 성공을 만들지 않으며 PR #29 검증을 이번 수정의 CI로 대체하지 않는다.
+수정은 [PR #30](https://github.com/wontaeJeong/agent-admission-gate/pull/30), 브랜치는 fix/convenience-final-response-recovery, 기준은 PR #29 squash다. 독립 범위 재검토는 I2를 해결로 확인했고 I1의 초안 손실·undefined 이동을 수정한 뒤 아래 M6만 비차단으로 남겼다. Critical/Important 잔여는 없다. 원래 판단 22건에 최종 잔여 판단 1건을 추가했다. **정확한 최종 head 필수 CI 5개 성공이 병합 조건**이며 실제 head·CI run·병합 SHA는 PR #30에 기록한다. 제품 코드는 11e69e5에서 검증한 뒤 같고 이후 변경은 이 최종 판단의 문서 기록뿐이다. 미래 CI/병합 성공을 만들거나 PR #29 검증을 이번 수정의 CI로 대체하지 않는다.
 
 ### 최종 수정 재현과 검증
 
@@ -86,7 +86,7 @@ C1/C2/C3는 각각 대표 10개를 검토했고 추가 색상/크기 변형 전�
 
 ## 비차단 후속 항목
 
-다섯 Minor는 이번 수정에 선택적으로 추가하지 않았다.
+최초 검토의 다섯 Minor는 이번 수정에 선택적으로 추가하지 않았다. 단 한 번의 최종 범위 재검토에서 발견한 비차단 M6를 추가해 후속 항목은 여섯 개다.
 
 | ID | 제한과 판단 | 후속 종료 조건 |
 | --- | --- | --- |
@@ -95,6 +95,7 @@ C1/C2/C3는 각각 대표 10개를 검토했고 추가 색상/크기 변형 전�
 | M3 · B3 | ComparisonFinding의 TypeScript Pick이 실제 projection의 null/primitive 허용보다 엄격해 새 소비자에 잘못된 보장을 준다. | 보수적 projection 타입 또는 서버 정규화, nullable/malformed fixture. |
 | M4 · 공통 | 알려진 도구 경고와 예상 부정 stderr가 남았다. green을 warning-free라고 부르지 않는다. | 도구 잡음 별도 정비, 의도된 부정 사례의 실패 계약 유지. |
 | M5 · 통합 탐색 | search → detail → summary에서 list context, history → compare 복귀에서 history query가 사라질 수 있다. 기본 jobs fallback/브라우저 Back은 가능하다. | 같은 계정의 검증된 상속 context와 별도 허용 history return URL, 중첩 탐색 회귀. 임의 URL allowlist 확장 금지. |
+| M6 · 최종 I1/R1 | 검토 상태 확인 GET의 review가 false/0/빈 문자열이면 유효한 null처럼 확인 완료로 처리될 수 있다. 사용자가 직접 누르는 재시도만 열리며 서버의 기존 검토 검사·job_id unique·경합 409와 프런트 409 입력 보존으로 중복 생성·초안 삭제·자동 POST는 없다. | literal null 또는 유효한 검토 ID만 허용하고 falsy primitive 회귀를 추가. 서버 중복 차단 계약이 바뀌면 우선 재평가. |
 
 M4는 반복 관찰을 합친 한 정비 항목이다. launcher VIRTUAL_ENV 불일치, Starlette/httpx deprecation, Node module registration deprecation, NO_COLOR/FORCE_COLOR 충돌, Astro 빈 i18n/missing-404는 도구/문서 경고다. MCP의 존재하지 않는 scan 부정 테스트에서 나오는 Scan not found stack은 의도한 assertion의 stderr로 실패와 구분한다. 이번 수정의 도구 오류/timeout도 [실패 교훈](lessons-learned.md)에 원인·해결·예방을 기록한다.
 
@@ -175,3 +176,7 @@ B1의 초기 메타데이터 한/영 누락은 Minor로 잘못 분류됐다가 �
 - [review-unknown-mobile-light](screenshots/convenience-final/review-unknown-mobile-light.png)
 - [board-unknown-mobile-light](screenshots/convenience-final/board-unknown-mobile-light.png)
 - [board-verified-desktop-light](screenshots/convenience-final/board-verified-desktop-light.png)
+
+## 최종 범위 재검토의 추가 판단과 비용
+
+23. Ruling: Final scoped residual I1/R1 is parked as nonblocking M6 — malformed falsy review state can enable only a manually chosen retry; unchanged server existing-review check, unique job_id and race-to-409 prevent duplicate creation, and the frontend retains input with no automatic POST — cost if wrong: misleading verification and one avoidable server-rejected retry until literal-null-or-valid-review validation is tightened; revisit if server duplicate guards change.

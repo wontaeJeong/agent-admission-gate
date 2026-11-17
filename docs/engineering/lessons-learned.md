@@ -548,3 +548,8 @@
 - 캡처: 첫 최종 browser run은 14/15 성공 후 board mobile 캡처/정리에서 timeout했다. 불명확 상태의 입력은 페이지 snapshot에 남아 있었고 제품 assertion 실패로 분류하지 않았다. 실제 sidebar 위치 안정화와 screenshot 제한 시간을 추가한 독립 재실행은 성공했다. 예방: 모바일 전환의 실제 bounds를 확인하고 teardown에서 fixture 정리를 보장한다.
 - 전달 추적: 기능별 보고서에는 최신 증거가 있었지만 체크인된 플랜·요구사항이 초기 상태를 유지했다. 해결: 14개 tested/squash head·CI·22개 판단/비용·5개 Minor를 영구 전달 기록에 연결한다. 예방: 최종 병합 단계에서 실제 전달표와 원본 체크리스트를 함께 대조하고 broad 이전 결과와 최종 집중 검증을 구분한다.
 - 이전 D3 optional final-audit append는 담당 범위를 벗어나 자동 승인 검토에서 거절됐고 재시도하지 않았다. 허용된 task 보고서의 실제 인터페이스를 controller가 최종 조정에 사용했다. 예방: 지정된 보고서와 controller 소유 통합 기록의 쓰기 범위를 구분하고 승인되지 않은 append를 확대하지 않는다.
+
+### 최종 범위 재검토의 확인 범위 (2026-11-17)
+
+- 현상: 새 검토 확인 GET의 review 필드를 truthiness로 검사해 false/0/빈 문자열을 literal null과 구분하지 못했다. 범위 재검토의 실제 함수 probe가 확인했다. 원인: 잘못된 GET 회귀가 빈 전체 객체만 다뤘다. 판단: 서버 existing-review 검사·unique job_id·경합 409, 프런트 409 입력 보존이 중복과 삭제를 막고 자동 POST도 없어 비차단 M6로 명시적으로 보류했다. 비용은 잘못된 확인 안내와 사용자가 누르는 불필요한 409 한 번이다. 예방: 후속 수정에서 nullable 필드는 literal null 또는 유효한 DTO만 허용하고 false/0/빈 문자열을 각각 검사한다. 서버 중복 차단 변경 시 우선 재평가한다.
+- 도구 현상: 잔여 영향 확인 중 존재하지 않는 scan_service.py 경로를 추정해 첫 rg 인자에서 오류가 났다. 실제 backend/aag 검색 결과의 routes_scans.py와 models.py로 확인했다. 예방: 파일명이 불확실하면 먼저 rg --files로 위치를 확인하고 특정 경로를 추측하지 않는다. 제품 변경은 없었다.

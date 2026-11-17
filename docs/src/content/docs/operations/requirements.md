@@ -4,7 +4,7 @@ title: 요구사항 추적과 검증 범위
 
 2026-11-17까지 확인된 제품 요구사항을 독립 저장소에 반영했습니다. 이 문서는 사내 코드와 동작이 완전히 같다는 주장이 아니라 구현 지점·검증 방식·외부 전제조건을 연결하는 기준입니다.
 
-편의기능 PR #16–#29는 독립 검토와 최종 head 필수 CI 5개 성공 후 병합됐습니다. [편의기능 전달 기록](https://github.com/wontaeJeong/agent-admission-gate/blob/main/docs/engineering/2026-11-17-convenience-roadmap-delivery.md)에 실제 PR/head/CI·검증 범위·22개 판단/비용·5개 Minor를 남깁니다. 전체 검토 I1/I2의 최종 수정 PR은 범위 재검토·정확한 head CI가 병합 조건이며 실제 결과는 해당 PR에 기록합니다. 운영 활성화·배포나 성능 SLA를 뜻하지 않습니다.
+편의기능 PR #16–#29는 독립 검토와 최종 head 필수 CI 5개 성공 후 병합됐습니다. [편의기능 전달 기록](https://github.com/wontaeJeong/agent-admission-gate/blob/main/docs/engineering/2026-11-17-convenience-roadmap-delivery.md)에 실제 PR/head/CI·검증 범위·원래 판단 22건과 최종 판단 1건의 비용·6개 Minor를 남깁니다. 전체 검토 I1/I2의 최종 수정 PR은 범위 재검토·정확한 head CI가 병합 조건이며 실제 결과는 해당 PR에 기록합니다. 운영 활성화·배포나 성능 SLA를 뜻하지 않습니다.
 
 | 요구사항 | 구현 지점 | 검증/운영 전제 |
 | --- | --- | --- |
