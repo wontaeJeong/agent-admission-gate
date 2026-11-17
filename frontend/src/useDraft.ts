@@ -71,6 +71,7 @@ export function useDraft(options: Options) {
     fields,
     candidate,
     dirty: false,
+    // Monotonic within this form: resets must never reuse a pending receipt.
     version: 0,
     written: 0,
     changedAt: 0,
@@ -213,6 +214,8 @@ export function useDraft(options: Options) {
     s.baseRevision = revision;
     s.baseState = options.baseState ?? {};
     s.fields = options.initialFields;
+    s.version++;
+    s.written = s.version;
     setFields(s.fields);
   }, [options.baseRevision, options.writable, options.conflictToken]);
   // Revoked internal-comment qualification removes both stored and in-memory content.
@@ -234,7 +237,8 @@ export function useDraft(options: Options) {
     s.fields = options.initialFields;
     s.candidate = null;
     s.dirty = false;
-    s.version = 0;
+    s.version++;
+    s.written = s.version;
     setFields(options.initialFields);
     setCandidate(null);
     setDirty(false);
@@ -270,8 +274,8 @@ export function useDraft(options: Options) {
       const s = state.current;
       s.candidate = null;
       s.dirty = false;
-      s.version = 0;
-      s.written = 0;
+      s.version++;
+      s.written = s.version;
       s.readError = false;
       acknowledgedConflict.current = latest.current.conflictToken ?? null;
       s.baseRevision = latest.current.baseRevision ?? null;
@@ -326,8 +330,8 @@ export function useDraft(options: Options) {
       return false;
     // Stop cleanup from recreating a submitted draft even if removeItem fails.
     state.current.dirty = false;
-    state.current.version = 0;
-    state.current.written = 0;
+    state.current.version++;
+    state.current.written = state.current.version;
     setDirty(false);
     setSavedAt(null);
     try {

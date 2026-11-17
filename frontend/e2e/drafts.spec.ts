@@ -1468,3 +1468,87 @@ for (const recovery of ["re-edit", "discard"] as const) {
     await expect.poll(() => submittedRevisions).toEqual([1, 2]);
   });
 }
+
+test("review_R1 a delayed board success preserves one new edit after conflict discard and settles busy", async ({
+  page,
+}) => {
+  await fixture(page);
+  let revision = 1;
+  let release!: () => void;
+  let submitted = false;
+  const hold = new Promise<void>((done) => {
+    release = done;
+  });
+  await page.route("**/api/boards/review-post", async (route) => {
+    if (route.request().method() === "PUT") {
+      revision = 2;
+      submitted = true;
+      await hold;
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill({
+      json: {
+        ...reviewPost(),
+        revision,
+        body: revision === 1 ? "Server body" : "Accepted submitted body",
+      },
+    });
+  });
+  await page.route("**/api/boards/review-post/comments", (r) =>
+    r.fulfill({ json: [] }),
+  );
+  await page.goto("/boards/review-post");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page
+    .getByLabel("Body", { exact: true })
+    .fill("Accepted submitted body");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => submitted).toBe(true);
+  await expect(page.getByLabel("Read-only draft")).toContainText(
+    "Accepted submitted body",
+    { timeout: 7000 },
+  );
+  await page
+    .getByRole("button", { name: "Discard draft", exact: true })
+    .click();
+  await expect(page.getByLabel("Body", { exact: true })).toHaveValue(
+    "Accepted submitted body",
+  );
+  // Exactly one authored change after discard must not reuse the old receipt.
+  await page.getByLabel("Body", { exact: true }).fill("New body after discard");
+  await expect(
+    page.getByText("Saved in this tab", { exact: false }),
+  ).toBeVisible();
+  const completed = page.waitForResponse(
+    (r) =>
+      r.url().endsWith("/api/boards/review-post") &&
+      r.request().method() === "PUT",
+  );
+  release();
+  await (await completed).finished();
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => done())),
+      ),
+  );
+  await page.evaluate(() => {
+    document.dispatchEvent(new Event("visibilitychange"));
+    window.dispatchEvent(new Event("pagehide"));
+  });
+  await expect(page.getByLabel("Body", { exact: true })).toHaveValue(
+    "New body after discard",
+  );
+  await expect(
+    page.getByRole("button", { name: "Save", exact: true }),
+  ).toBeEnabled();
+  expect(
+    await page.evaluate(
+      () =>
+        Object.entries(sessionStorage)
+          .filter(([key]) => key.startsWith("aag-draft:"))
+          .map(([, raw]) => JSON.parse(raw))
+          .find((d) => d.kind === "board_post")?.fields.body,
+    ),
+  ).toBe("New body after discard");
+});
