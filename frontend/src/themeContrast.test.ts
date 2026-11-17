@@ -40,6 +40,7 @@ describe("Theme text contrast and brand token coverage", () => {
         ["--color-ink", "--color-canvas"],
         ["--color-ink-muted", "--color-raised"],
         ["--color-accent", "--color-raised"],
+        ["--color-accent", "--color-accent-subtle"],
         ["--color-on-accent", "--color-accent"],
         ["--summary-print-ink", "--summary-print-canvas"],
       ])
