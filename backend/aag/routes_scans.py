@@ -21,7 +21,13 @@ from .job_query import job_scope_filters, utc_window_start
 from .models import Comment, Job, Review, ReviewEvent, User
 from .notifications import emit_notification
 from .review_query import review_queue_predicates
-from .review_workflow import decide_review, review_dto, transition_review, visible_review
+from .review_workflow import (
+    decide_review,
+    followup_conflict,
+    review_dto,
+    transition_review,
+    visible_review,
+)
 from .scan_summary import build_scan_summary
 from .schemas import (
     CommentRequest,
@@ -29,6 +35,7 @@ from .schemas import (
     ReviewChange,
     ReviewClaim,
     ReviewDecision,
+    ReviewFollowUp,
     ReviewRelease,
     ScanRequest,
 )
@@ -342,7 +349,7 @@ def request_review(job_id: str, data: Reason, request: Request, a: Actor = Depen
             emit_notification(
                 s, "review.requested", job, reviewers, "review.requested:" + review.id, review.id
             )
-            return review_dto(s, review)
+            return review_dto(s, review, a)
     except IntegrityError:
         # Another request can win after the duplicate check. Preserve unrelated DB errors.
         with request.app.state.db.session() as s:
@@ -379,7 +386,7 @@ def reviews(
         total = s.scalar(select(func.count()).select_from(query.subquery()))
         return {
             "items": [
-                {**review_dto(s, r), "source": s.get(Job, r.job_id).source}
+                {**review_dto(s, r, a), "source": s.get(Job, r.job_id).source}
                 for r in s.scalars(
                     query.order_by(
                         Review.created_at.asc() if sort == "oldest" else Review.created_at.desc(),
@@ -398,7 +405,7 @@ def review_detail(review_id: str, request: Request, a: Actor = Depends(actor)):
     a.interactive()
     with request.app.state.db.session() as s:
         r = visible_review(s, a, review_id)
-        return {**review_dto(s, r), "job": record(s.get(Job, r.job_id))}
+        return {**review_dto(s, r, a), "job": record(s.get(Job, r.job_id))}
 
 
 @router.post("/reviews/{review_id}/decision")
@@ -459,6 +466,32 @@ def respond_review(review_id: str, data: ReviewChange, request: Request, a: Acto
     require_review_transition(request, a)
     with request.app.state.db.session.begin() as s:
         return transition_review(s, a, review_id, data.expected_revision, "respond", data.reason)
+
+
+@router.post("/reviews/{review_id}/follow-ups", status_code=201)
+def follow_up_review(
+    review_id: str, data: ReviewFollowUp, request: Request, a: Actor = Depends(actor)
+):
+    require_review_transition(request, a)
+    try:
+        with request.app.state.db.session.begin() as s:
+            return transition_review(
+                s,
+                a,
+                review_id,
+                data.expected_revision,
+                "follow-up",
+                data.reason,
+                new_job_id=data.new_job_id,
+            )
+    except IntegrityError:
+        with request.app.state.db.session() as s:
+            visible_review(s, a, review_id)
+            if s.scalar(select(Review.id).where(Review.previous_review_id == review_id)):
+                raise followup_conflict(s, a, review_id) from None
+            if s.scalar(select(Review.id).where(Review.job_id == data.new_job_id)):
+                raise HTTPException(409, "Review request already exists for this scan") from None
+        raise
 
 
 @router.get("/reviews/{review_id}/events")

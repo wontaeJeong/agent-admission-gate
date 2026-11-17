@@ -21,7 +21,9 @@ export function DraftRecovery({
               ? t("보충 설명", "Supplementary explanation")
               : draft.candidate?.kind === "review_withdraw"
                 ? t("철회 사유", "Withdrawal reason")
-                : t("요청 사유", "Request reason"),
+                : draft.candidate?.kind === "review_followup"
+                  ? t("후속 요청 사유", "Follow-up reason")
+                  : t("요청 사유", "Request reason"),
     body: t("본문", "Body"),
     title: t("제목", "Title"),
     visibility: t("공개 범위", "Visibility"),

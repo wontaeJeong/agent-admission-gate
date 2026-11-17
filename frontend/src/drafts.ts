@@ -6,6 +6,7 @@ export type DraftKind =
   | "review_changes"
   | "review_respond"
   | "review_withdraw"
+  | "review_followup"
   | "scan_comment"
   | "board_post";
 export type DraftFields = Record<string, string | boolean>;
@@ -41,6 +42,7 @@ const allowlists: Record<DraftKind, Record<string, "string" | "boolean">> = {
   review_changes: { reason: "string" },
   review_respond: { reason: "string" },
   review_withdraw: { reason: "string" },
+  review_followup: { reason: "string" },
   review_decision: { decision: "string", reason: "string" },
   scan_comment: { body: "string", internal: "boolean" },
   board_post: {
