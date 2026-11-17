@@ -6,6 +6,7 @@ import { DraftRecovery } from "../DraftRecovery";
 import { ErrorMessage, State, useLoad } from "../components";
 import { useDraft } from "../useDraft";
 import { sessionCoordinator } from "../session";
+import type { DraftKind } from "../drafts";
 
 type Text = (ko: string, en: string) => string;
 export function workflowLabel(state: string, t: Text) {
@@ -36,6 +37,9 @@ export function ReviewActivity({
   const labels: Record<string, string> = {
     claim: t("담당 지정", "Claimed"),
     release: t("담당 해제", "Released"),
+    request_changes: t("보완 요청", "Changes requested"),
+    respond: t("설명 보충", "Explanation added"),
+    withdraw: t("철회", "Withdrawn"),
     approved: t("승인", "Approved"),
     rejected: t("반려", "Rejected"),
   };
@@ -92,9 +96,128 @@ export function ReviewAssignment({
   onChanged: () => void;
   readVerified: boolean;
 }) {
+  const { user } = useApp(),
+    t = useText();
+  const stale = r.assignee && (!r.assignee.active || !r.assignee.qualified);
+  const pending = r.status === "pending";
+  const owner = r.requester_id === user.id;
+  const canRelease =
+    pending &&
+    !!r.assignee &&
+    (r.assignee.id === user.id ||
+      user.role === "admin" ||
+      (user.reviewer && stale));
+  const canClaim =
+    pending &&
+    r.workflow_state === "waiting" &&
+    !r.assignee &&
+    user.reviewer &&
+    !owner;
+  const canRequest =
+    pending &&
+    r.workflow_state === "in_review" &&
+    r.assignee_id === user.id &&
+    user.reviewer &&
+    !owner;
+  return (
+    <section className="panel form-panel">
+      <h2>{t("담당 · 진행", "Assignment · workflow")}</h2>
+      <p>
+        {t("담당자: ", "Assignee: ")}
+        {r.assignee?.name || t("미배정", "Unassigned")}
+      </p>
+      <p>
+        {workflowLabel(r.workflow_state, t)} · {t("버전", "Revision")}{" "}
+        {r.revision}
+      </p>
+      {stale && (
+        <p>
+          {t(
+            "담당자가 비활성 상태이거나 로컬 검토 자격이 없습니다.",
+            "The assignee is inactive or lacks local reviewer qualification.",
+          )}
+        </p>
+      )}
+      <ReviewAction
+        review={r}
+        onChanged={onChanged}
+        readVerified={readVerified}
+        action="release"
+        eligible={!!canRelease}
+        canClaim={!!canClaim}
+      />
+      <ReviewAction
+        review={r}
+        onChanged={onChanged}
+        readVerified={readVerified}
+        action="request-changes"
+        eligible={canRequest}
+      />
+      <ReviewAction
+        review={r}
+        onChanged={onChanged}
+        readVerified={readVerified}
+        action="respond"
+        eligible={pending && owner && r.workflow_state === "changes_requested"}
+      />
+      <ReviewAction
+        review={r}
+        onChanged={onChanged}
+        readVerified={readVerified}
+        action="withdraw"
+        eligible={pending && owner}
+      />
+    </section>
+  );
+}
+
+type Action = "release" | "request-changes" | "respond" | "withdraw";
+function ReviewAction({
+  review: r,
+  onChanged,
+  readVerified,
+  action,
+  eligible,
+  canClaim = false,
+}: {
+  review: any;
+  onChanged: () => void;
+  readVerified: boolean;
+  action: Action;
+  eligible: boolean;
+  canClaim?: boolean;
+}) {
   const { user, reviewWorkflow, reconcileSession } = useApp(),
     t = useText(),
     send = useAccountMutation();
+  const labels = {
+    release: [
+      t("담당 해제", "Release assignment"),
+      t("해제 사유", "Release reason"),
+      t("해제 확인", "Confirm release"),
+    ],
+    "request-changes": [
+      t("보완 요청", "Request changes"),
+      t("보완 요청 사유", "Supplement request reason"),
+      t("보완 요청 확인", "Confirm supplement request"),
+    ],
+    respond: [
+      t("설명 보충", "Add explanation"),
+      t("보충 설명", "Supplementary explanation"),
+      t("설명 보내기", "Send explanation"),
+    ],
+    withdraw: [
+      t("요청 철회", "Withdraw request"),
+      t("철회 사유", "Withdrawal reason"),
+      t("철회 확인", "Confirm withdrawal"),
+    ],
+  }[action];
+  const kinds: Record<Action, DraftKind> = {
+    release: "review_release",
+    "request-changes": "review_changes",
+    respond: "review_respond",
+    withdraw: "review_withdraw",
+  };
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -102,41 +225,28 @@ export function ReviewAssignment({
     [rejected, setRejected] = useState<number | null>(null),
     [denied, setDenied] = useState(false),
     [uncertain, setUncertain] = useState(false);
-  const stale = r.assignee && (!r.assignee.active || !r.assignee.qualified);
-  const canRelease =
-    r.status === "pending" &&
-    !!r.assignee &&
-    (r.assignee.id === user.id ||
-      user.role === "admin" ||
-      (user.reviewer && stale));
-  const canClaim =
-    r.status === "pending" &&
-    r.workflow_state === "waiting" &&
-    !r.assignee &&
-    user.reviewer &&
-    r.requester_id !== user.id;
   const current =
     readVerified &&
     (rejected === null || r.revision > rejected) &&
     !denied &&
     !uncertain;
   const draft = useDraft({
-    kind: "review_release",
+    kind: kinds[action],
     targetId: r.id,
     enabled: true,
-    writable: !!reviewWorkflow && current && (canRelease || canClaim),
+    writable: !!reviewWorkflow && current && (eligible || canClaim),
     initialFields: { reason: "" },
     baseRevision: r.revision,
     conflictToken,
   });
-  async function mutate(action: "claim" | "release") {
+  async function mutate(target: Action | "claim") {
     const submission = draft.beginSubmission();
     setBusy(true);
     setError("");
     try {
-      await send(`/reviews/${r.id}/${action}`, {
+      await send("/reviews/" + r.id + "/" + target, {
         expected_revision: submission.baseRevision,
-        ...(action === "release" && submission.fields.reason
+        ...(target !== "claim" && submission.fields.reason
           ? { reason: submission.fields.reason }
           : {}),
       });
@@ -166,38 +276,26 @@ export function ReviewAssignment({
     const receipt = draft.beginSubmission();
     setBusy(true);
     try {
-      const latest = await api(`/reviews/${r.id}`);
+      const latest = await api("/reviews/" + r.id);
       if (!draft.isCurrentSubmission(receipt)) return;
-      if (latest.revision === r.revision) {
-        setUncertain(false);
-        setError("");
+      if (latest.revision !== r.revision) {
+        setConflictToken({});
+        setRejected(receipt.baseRevision);
       }
+      setUncertain(false);
+      setError("");
       onChanged();
     } catch (e) {
-      if (draft.isCurrentSubmission(receipt)) setError((e as Error).message);
+      if (!draft.isCurrentSubmission(receipt)) return;
+      setError((e as Error).message);
+      if (e instanceof APIError && [401, 403, 404].includes(e.status))
+        onChanged();
     } finally {
       if (draft.isCurrentSubmission(receipt)) setBusy(false);
     }
   }
   return (
-    <section className="panel form-panel">
-      <h2>{t("담당 · 진행", "Assignment · workflow")}</h2>
-      <p>
-        {t("담당자: ", "Assignee: ")}
-        {r.assignee?.name || t("미배정", "Unassigned")}
-      </p>
-      <p>
-        {workflowLabel(r.workflow_state, t)} · {t("버전", "Revision")}{" "}
-        {r.revision}
-      </p>
-      {stale && (
-        <p>
-          {t(
-            "담당자가 비활성 상태이거나 로컬 검토 자격이 없습니다.",
-            "The assignee is inactive or lacks local reviewer qualification.",
-          )}
-        </p>
-      )}
+    <div>
       <ErrorMessage value={error} />
       {(rejected !== null || denied || uncertain) && (
         <p role="status">
@@ -223,9 +321,9 @@ export function ReviewAssignment({
           {t("최신 검토 확인", "Check latest review")}
         </button>
       )}
+      <DraftRecovery draft={draft} />
       {reviewWorkflow && (
         <>
-          <DraftRecovery draft={draft} />
           {canClaim && (
             <button
               disabled={busy || !current || draft.locked}
@@ -236,36 +334,54 @@ export function ReviewAssignment({
                 : t("내가 검토하기", "Claim review")}
             </button>
           )}
-          {canRelease && !open && (
+          {eligible && !open && (
             <button disabled={busy || !current} onClick={() => setOpen(true)}>
-              {t("담당 해제", "Release assignment")}
+              {labels[0]}
             </button>
           )}
-          {open && canRelease && (
+          {open && eligible && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                void mutate("release");
+                void mutate(action);
               }}
             >
+              {action === "withdraw" && (
+                <p>
+                  {t(
+                    "대기 중인 검토 요청만 닫습니다. 검사 판정은 변경하지 않습니다.",
+                    "Closes this pending review request. The scan verdict stays unchanged.",
+                  )}
+                </p>
+              )}
+              {action === "respond" && (
+                <p>
+                  {t(
+                    "설명만 보충합니다. 검사한 파일과 결과는 변경하지 않습니다.",
+                    "Adds an explanation. Scanned files and results stay unchanged.",
+                  )}
+                </p>
+              )}
               <fieldset disabled={busy || draft.locked || !current}>
                 <label>
-                  {t("해제 사유", "Release reason")}
+                  {labels[1]}
                   <textarea
-                    aria-label={t("해제 사유", "Release reason")}
+                    aria-label={labels[1]}
                     value={String(draft.fields.reason)}
                     onChange={(e) => draft.update("reason", e.target.value)}
                     minLength={5}
                     maxLength={4000}
-                    required={r.assignee?.id !== user.id}
+                    required={
+                      action !== "release" || r.assignee?.id !== user.id
+                    }
                   />
                 </label>
-                <button>{t("해제 확인", "Confirm release")}</button>
+                <button>{busy ? t("저장 중…", "Saving…") : labels[2]}</button>
               </fieldset>
             </form>
           )}
         </>
       )}
-    </section>
+    </div>
   );
 }

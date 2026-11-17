@@ -12,7 +12,7 @@ from .models import Job, Notification, NotificationInbox, NotificationPreference
 RETENTION_SECONDS = 90 * 86400
 Category = Literal["all", "scans", "reviews", "comments"]
 State = Literal["all", "unread", "archived"]
-PREFERENCES = ("scans", "review_requests", "review_results", "comments")
+PREFERENCES = ("scans", "review_requests", "review_results", "review_updates", "comments")
 EVENT_PREFERENCE = {
     "scan.completed": "scans",
     "scan.failed": "scans",
@@ -20,6 +20,10 @@ EVENT_PREFERENCE = {
     "review.requested": "review_requests",
     "review.approved": "review_results",
     "review.rejected": "review_results",
+    **{
+        f"review.{kind}": "review_updates"
+        for kind in ("claimed", "released", "changes_requested", "responded", "withdrawn")
+    },
     "comment.created": "comments",
 }
 
@@ -34,9 +38,9 @@ def preference_values(row):
     return {name: getattr(row, name) if row else True for name in PREFERENCES}
 
 
-def emit_notification(s, kind, job, recipients, event_key, review_id=None):
+def emit_notification(s, kind, job, recipients, event_key, review_id=None, *, actor_id=None):
     preference = EVENT_PREFERENCE[kind]
-    recipients = set(recipients)
+    recipients = set(recipients) - {None, actor_id}
     if not recipients:
         return
     query = (
@@ -53,6 +57,12 @@ def emit_notification(s, kind, job, recipients, event_key, review_id=None):
     )
     if kind == "review.requested":
         query = query.where(User.reviewer.is_(True), User.id != job.owner_id)
+    if preference == "review_updates":
+        # Same current owner/staff authorization as review reads; assignment alone
+        # never grants read access after qualification loss.
+        query = query.where(
+            or_(User.id == job.owner_id, User.role == "admin", User.reviewer.is_(True))
+        )
     for recipient in s.scalars(query.order_by(User.id)):
         # Held until commit: a plain DB sequence permits allocations to commit
         # out of order and cannot define a committed inbox snapshot.

@@ -56,6 +56,7 @@ type MockInbox = {
     scans: boolean;
     review_requests: boolean;
     review_results: boolean;
+    review_updates: boolean;
     comments: boolean;
   };
 };
@@ -70,6 +71,7 @@ async function mockInbox(page: Page, shared?: MockInbox) {
       scans: true,
       review_requests: true,
       review_results: true,
+      review_updates: true,
       comments: true,
     },
   };

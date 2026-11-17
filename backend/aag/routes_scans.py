@@ -23,7 +23,15 @@ from .notifications import emit_notification
 from .review_query import review_queue_predicates
 from .review_workflow import decide_review, review_dto, transition_review, visible_review
 from .scan_summary import build_scan_summary
-from .schemas import CommentRequest, Reason, ReviewClaim, ReviewDecision, ReviewRelease, ScanRequest
+from .schemas import (
+    CommentRequest,
+    Reason,
+    ReviewChange,
+    ReviewClaim,
+    ReviewDecision,
+    ReviewRelease,
+    ScanRequest,
+)
 from .service import owned_job
 
 router = APIRouter(prefix="/api")
@@ -424,6 +432,33 @@ def release_review(
     require_review_transition(request, a)
     with request.app.state.db.session.begin() as s:
         return transition_review(s, a, review_id, data.expected_revision, "release", data.reason)
+
+
+@router.post("/reviews/{review_id}/withdraw")
+def withdraw_review(
+    review_id: str, data: ReviewChange, request: Request, a: Actor = Depends(actor)
+):
+    require_review_transition(request, a)
+    with request.app.state.db.session.begin() as s:
+        return transition_review(s, a, review_id, data.expected_revision, "withdraw", data.reason)
+
+
+@router.post("/reviews/{review_id}/request-changes")
+def request_changes_review(
+    review_id: str, data: ReviewChange, request: Request, a: Actor = Depends(actor)
+):
+    require_review_transition(request, a)
+    with request.app.state.db.session.begin() as s:
+        return transition_review(
+            s, a, review_id, data.expected_revision, "request_changes", data.reason
+        )
+
+
+@router.post("/reviews/{review_id}/respond")
+def respond_review(review_id: str, data: ReviewChange, request: Request, a: Actor = Depends(actor)):
+    require_review_transition(request, a)
+    with request.app.state.db.session.begin() as s:
+        return transition_review(s, a, review_id, data.expected_revision, "respond", data.reason)
 
 
 @router.get("/reviews/{review_id}/events")

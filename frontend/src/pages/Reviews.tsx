@@ -337,10 +337,12 @@ export function ReviewDetail() {
     try {
       const latest = await api(`/reviews/${id}`);
       if (!draft.isCurrentSubmission(receipt)) return;
-      if (latest.revision === r?.revision) {
-        setUncertain(false);
-        setError("");
+      if (latest.revision !== r?.revision) {
+        setConflictToken({});
+        setRejectedRevision(receipt.baseRevision);
       }
+      setUncertain(false);
+      setError("");
       setRefresh((x) => x + 1);
     } catch (e) {
       if (draft.isCurrentSubmission(receipt)) setError((e as Error).message);
@@ -367,6 +369,13 @@ export function ReviewDetail() {
             />
             <section className="panel review-reason">
               <Badge value={r.status} />
+              {r.status === "withdrawn" && <p>{t("철회됨", "Withdrawn")}</p>}
+              {r.closed_reason && (
+                <>
+                  <h3>{t("종료 사유", "Closure reason")}</h3>
+                  <p>{r.closed_reason}</p>
+                </>
+              )}
               <h2>{t("요청 사유", "Request reason")}</h2>
               <p>{r.reason}</p>
               {r.decision_reason && (

@@ -348,6 +348,7 @@ type Preferences = {
   scans: boolean;
   review_requests: boolean;
   review_results: boolean;
+  review_updates: boolean;
   comments: boolean;
 };
 
@@ -476,6 +477,14 @@ function PreferenceForm({ initial }: { initial: Preferences }) {
       t(
         "내 검토 요청의 승인과 반려",
         "Approval and rejection of my review requests",
+      ),
+    ],
+    [
+      "review_updates",
+      t("검토 진행 알림", "Review updates"),
+      t(
+        "담당 지정·해제, 보완 요청·응답, 철회",
+        "Assignment, release, supplement requests, explanations and withdrawal",
       ),
     ],
     [

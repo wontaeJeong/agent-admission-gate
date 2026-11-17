@@ -15,7 +15,13 @@ export function DraftRecovery({
         ? t("결정 사유", "Decision reason")
         : draft.candidate?.kind === "review_release"
           ? t("해제 사유", "Release reason")
-          : t("요청 사유", "Request reason"),
+          : draft.candidate?.kind === "review_changes"
+            ? t("보완 요청 사유", "Supplement request reason")
+            : draft.candidate?.kind === "review_respond"
+              ? t("보충 설명", "Supplementary explanation")
+              : draft.candidate?.kind === "review_withdraw"
+                ? t("철회 사유", "Withdrawal reason")
+                : t("요청 사유", "Request reason"),
     body: t("본문", "Body"),
     title: t("제목", "Title"),
     visibility: t("공개 범위", "Visibility"),
@@ -50,6 +56,7 @@ export function DraftRecovery({
       pending: t("대기 중", "Pending"),
       approved: t("승인됨", "Approved"),
       rejected: t("반려됨", "Rejected"),
+      withdrawn: t("철회됨", "Withdrawn"),
     },
   };
   const displayValue = (name: string, value: string | boolean) =>
