@@ -364,9 +364,10 @@ function Exceptions() {
     setError("");
     try {
       await send("/admin/allowlist", receipt.fields);
+      if (!submission.isCurrentSubmission(receipt)) return;
+      setRefresh((x) => x + 1);
       if (!submission.markSubmitted(receipt)) return;
       form.reset();
-      setRefresh((x) => x + 1);
     } catch (e) {
       if (!submission.isCurrentSubmission(receipt)) return;
       setError((e as Error).message);

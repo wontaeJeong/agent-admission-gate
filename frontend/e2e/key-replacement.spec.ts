@@ -20,16 +20,21 @@ async function open(
   await page.getByRole("link", { name: /SSO/ }).click();
   await expect(page.locator("main")).toBeVisible();
 }
-async function seed(page: Page, name: string, scopes = ["scan:read"]) {
-  const response = await page.request.post(fixture.origin + "/api/api-keys", {
-    headers: { Origin: fixture.origin, "X-AAG-Account": "a1-alice" },
+async function seed(
+  page: Page,
+  name: string,
+  scopes = ["scan:read"],
+  origin = fixture.origin,
+) {
+  const response = await page.request.post(origin + "/api/api-keys", {
+    headers: { Origin: origin, "X-AAG-Account": "a1-alice" },
     data: { name, scopes, days: 7 },
   });
   expect(response.status()).toBe(201);
   return response.json();
 }
-async function readWith(page: Page, token: string) {
-  return page.request.get(fixture.origin + "/api/scans", {
+async function readWith(page: Page, token: string, origin = fixture.origin) {
+  return page.request.get(origin + "/api/scans", {
     headers: { Authorization: "Bearer " + token },
   });
 }
@@ -265,6 +270,9 @@ test("a delayed accepted issuance keeps newer input and settles pending without 
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
     "Newer unsent key name",
   );
+  await expect(
+    page.getByRole("heading", { name: "Delayed issued key", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Saved · dismiss" }).click();
   await expect(
     page.getByRole("button", { name: "Create key", exact: true }),
@@ -581,4 +589,187 @@ test("replacement preserves a write-only scope without granting read access", as
   );
   expect(replacement.scopes).toEqual(["scan:write"]);
   expect(keys.find((key: any) => key.id === old.id).state).toBe("active");
+});
+
+test.describe("Response recovery and accepted mutations", () => {
+  let fixture: Awaited<ReturnType<typeof startOidcFixture>>;
+  test.beforeAll(async () => {
+    fixture = await startOidcFixture({ keyReplacement: true });
+  });
+  test.afterAll(async () => {
+    await fixture.stop();
+  });
+  for (const [label, body] of [
+    ["empty", ""],
+    ["truncated", '{"token":'],
+  ] as const) {
+    test(
+      "I1 a committed issuance with " +
+        label +
+        "201 body requires explicit GET recovery",
+      async ({ page }) => {
+        await open(page, "/api-keys?key=d3-key", fixture.origin);
+        let posts = 0,
+          listReads = 0;
+        await page.route("**/api/api-keys*", async (route) => {
+          if (route.request().method() !== "POST") {
+            if (posts) listReads++;
+            return route.continue();
+          }
+          posts++;
+          const response = await route.fetch();
+          expect(response.status()).toBe(201);
+          await route.fulfill({
+            status: 201,
+            contentType: "application/json",
+            body,
+          });
+        });
+        const issuedName = "Incomplete " + label + " issued key";
+        await page.getByLabel("Name", { exact: true }).fill(issuedName);
+        await page
+          .getByRole("button", { name: "Create key", exact: true })
+          .click();
+        await expect(
+          page.getByRole("button", { name: "Check current keys" }),
+        ).toBeVisible();
+        await expect(page.locator(".secret-row")).toHaveCount(0);
+        await expect(page.getByLabel("Name", { exact: true })).toHaveValue(
+          issuedName,
+        );
+        await expect(
+          page.getByRole("button", { name: "Create key", exact: true }),
+        ).toBeDisabled();
+        expect(posts).toBe(1);
+        expect(listReads).toBe(0);
+        await page.getByRole("button", { name: "Check current keys" }).click();
+        await expect(
+          page.getByRole("heading", { name: issuedName, exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole("button", { name: "Create key", exact: true }),
+        ).toBeEnabled();
+        expect(listReads).toBeGreaterThan(0);
+        expect(posts).toBe(1);
+      },
+    );
+  }
+  for (const cancel of [false, true]) {
+    test(
+      "I2 delayed revocation refreshes the key after " +
+        (cancel ? "cancellation" : "newer reason"),
+      async ({ page }) => {
+        await open(page, "/api-keys?key=d3-key", fixture.origin);
+        const old = await seed(
+          page,
+          cancel ? "Delayed cancel revoke" : "Delayed edited revoke",
+          ["scan:read"],
+          fixture.origin,
+        );
+        await page.goto(fixture.origin + "/api-keys?key=" + old.id);
+        const card = page.locator('article[aria-current="true"]');
+        let release!: () => void;
+        const hold = new Promise<void>((done) => (release = done));
+        let accepted = false;
+        await page.route(
+          "**/api/api-keys/" + old.id + "/revoke",
+          async (route) => {
+            const response = await route.fetch();
+            expect(response.status()).toBe(200);
+            accepted = true;
+            await hold;
+            await route.fulfill({ response });
+          },
+        );
+        await card.getByRole("button", { name: "Revoke", exact: true }).click();
+        await page
+          .getByLabel("Revocation reason")
+          .fill("Accepted rollout verification reason");
+        await page.getByRole("button", { name: "Confirm revocation" }).click();
+        await expect.poll(() => accepted).toBe(true);
+        if (cancel)
+          await page
+            .getByRole("button", { name: "Cancel", exact: true })
+            .click();
+        else
+          await page
+            .getByLabel("Revocation reason")
+            .fill("Newer unsent revocation reason");
+        release();
+        await expect(card.locator(".badge")).toHaveText("revoked");
+        await expect(
+          card.getByRole("button", { name: "Revoke", exact: true }),
+        ).toHaveCount(0);
+        if (cancel)
+          await expect(page.getByLabel("Revocation reason")).toHaveCount(0);
+        else
+          await expect(page.getByLabel("Revocation reason")).toHaveValue(
+            "Newer unsent revocation reason",
+          );
+        await expect(
+          page.getByRole("button", { name: "Create key", exact: true }),
+        ).toBeEnabled();
+        expect((await readWith(page, old.token, fixture.origin)).status()).toBe(
+          401,
+        );
+      },
+    );
+  }
+  test("I2 delayed exception creation refreshes accepted scope while retaining newer input", async ({
+    page,
+  }) => {
+    await open(
+      page,
+      "/admin?tab=allowlist&exception=d3-exception",
+      fixture.origin,
+    );
+    let release!: () => void;
+    const hold = new Promise<void>((done) => (release = done));
+    let accepted = false;
+    await page.route("**/api/admin/allowlist", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      accepted = true;
+      await hold;
+      await route.fulfill({ response });
+    });
+    await page
+      .getByLabel("Source", { exact: true })
+      .fill("Delayed reviewed source.zip");
+    await page.getByLabel("Content SHA256").fill("e".repeat(64));
+    await page.getByLabel("Finding fingerprint").fill("f".repeat(64));
+    await page
+      .getByLabel("Expires · within 90 days")
+      .fill(new Date(Date.now() + 86400000).toISOString().slice(0, 16));
+    await page
+      .getByLabel("Reason", { exact: true })
+      .fill("Accepted independent exact-scope review");
+    await page
+      .getByRole("button", { name: "Create exception", exact: true })
+      .click();
+    await expect.poll(() => accepted).toBe(true);
+    await page
+      .getByLabel("Source", { exact: true })
+      .fill("Newer unsent source.zip");
+    await page
+      .getByLabel("Reason", { exact: true })
+      .fill("Newer unsent exception reason");
+    release();
+    await expect(
+      page.getByRole("heading", {
+        name: "Delayed reviewed source.zip",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(page.getByLabel("Source", { exact: true })).toHaveValue(
+      "Newer unsent source.zip",
+    );
+    await expect(page.getByLabel("Reason", { exact: true })).toHaveValue(
+      "Newer unsent exception reason",
+    );
+    await expect(
+      page.getByRole("button", { name: "Create exception", exact: true }),
+    ).toBeEnabled();
+  });
 });

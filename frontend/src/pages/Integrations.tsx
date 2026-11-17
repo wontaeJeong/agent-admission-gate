@@ -147,13 +147,23 @@ export function Keys({ admin = false }: { admin?: boolean }) {
       sent = true;
       const r = await send("/api-keys", receipt.fields);
       if (!issuance.isCurrentSubmission(receipt)) return;
+      if (
+        typeof r?.token !== "string" ||
+        !/^aag_sk_[A-Za-z0-9_-]{43}$/.test(r.token)
+      )
+        throw new TypeError(
+          t(
+            "발급 응답에서 키 원문을 확인할 수 없습니다.",
+            "The issuance response did not contain a usable key secret.",
+          ),
+        );
       // A newer edit can retain its input while the accepted token is shown once.
       setToken(r.token);
+      setRefresh((x) => x + 1);
       if (!issuance.markSubmitted(receipt)) return;
       setName("");
       setScopes(["scan:read", "scan:write"]);
       setDays("90");
-      setRefresh((x) => x + 1);
     } catch (e) {
       if (!issuance.isCurrentSubmission(receipt)) return;
       failed(e);
@@ -201,10 +211,11 @@ export function Keys({ admin = false }: { admin?: boolean }) {
       await send(base + "/" + receipt.fields.id + "/revoke", {
         reason: receipt.fields.reason,
       });
+      if (!revocation.isCurrentSubmission(receipt)) return;
+      setRefresh((x) => x + 1);
       if (!revocation.markSubmitted(receipt)) return;
       setSelected("");
       setReason("");
-      setRefresh((x) => x + 1);
     } catch (e) {
       if (!revocation.isCurrentSubmission(receipt)) return;
       failed(e);
