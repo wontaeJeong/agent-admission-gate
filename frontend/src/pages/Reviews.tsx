@@ -34,7 +34,7 @@ export function Reviews() {
     load = useLoad(
       `/reviews?tab=${tab}&page=${page}${params.get("status") ? "&status=" + encodeURIComponent(params.get("status")!) : ""}`,
     );
-  useListContext(
+  const rememberPosition = useListContext(
     "reviews",
     load.loading || unavailable ? null : load.data,
     page,
@@ -57,7 +57,7 @@ export function Reviews() {
               : "Track your review requests and decisions.",
         )}
       />
-      <SavedViews resource="reviews" />
+      <SavedViews resource="reviews" beforeNavigate={rememberPosition} />
       {unavailable && (
         <ErrorMessage
           value={t(
@@ -78,7 +78,10 @@ export function Reviews() {
             : [["mine", t("내 요청", "My requests")]]
         }
         selected={tab}
-        onChange={(v) => setParams({ tab: v, page: "1" })}
+        onChange={(v) => {
+          rememberPosition();
+          setParams({ tab: v, page: "1" });
+        }}
       />
       {pendingOnly && (
         <p className="panel-note">
@@ -86,7 +89,12 @@ export function Reviews() {
             "대기 중인 내 요청만 표시합니다.",
             "Showing only your pending requests.",
           )}{" "}
-          <button onClick={() => setParams({ tab: "mine" })}>
+          <button
+            onClick={() => {
+              rememberPosition();
+              setParams({ tab: "mine" });
+            }}
+          >
             {t("전체 보기", "Show all")}
           </button>
         </p>
@@ -139,6 +147,7 @@ export function Reviews() {
                   const next = new URLSearchParams(params);
                   next.set("tab", tab);
                   next.set("page", String(v));
+                  rememberPosition();
                   setParams(next);
                 }}
               />

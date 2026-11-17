@@ -1,3 +1,11 @@
+import {
+  findingEntries,
+  filterFindings,
+  parseFindingSelection,
+  selectFinding,
+  findingHref,
+} from "../findingSelection";
+import { SummaryTools } from "./ScanSummary";
 import { rerunFields, snapshotCommit, type RerunMode } from "./scanRerun";
 import { useDraft } from "../useDraft";
 import { DraftRecovery } from "../DraftRecovery";
@@ -57,7 +65,11 @@ export function Jobs() {
       (params.get("mine") === "true" || !staff ? "personal" : "all"),
     page = Number(params.get("page") || 1);
   const load = useLoad(`/scans?${params}`, 0, 5000);
-  useListContext("jobs", load.loading ? null : load.data, page);
+  const rememberPosition = useListContext(
+    "jobs",
+    load.loading ? null : load.data,
+    page,
+  );
   const [query, setQuery] = useState(params.get("q") || "");
   useEffect(() => setQuery(params.get("q") || ""), [params]);
   useEffect(() => {
@@ -67,6 +79,7 @@ export function Jobs() {
       if (query) next.set("q", query);
       else next.delete("q");
       next.set("page", "1");
+      rememberPosition();
       setParams(next);
     }, 300);
     return () => clearTimeout(timer);
@@ -79,6 +92,7 @@ export function Jobs() {
     else next.delete(key);
     if (key === "scope") next.delete("mine");
     if (key !== "page") next.set("page", "1");
+    rememberPosition();
     setParams(next);
   };
   return (
@@ -96,7 +110,7 @@ export function Jobs() {
           </Link>
         }
       />
-      <SavedViews resource="jobs" />
+      <SavedViews resource="jobs" beforeNavigate={rememberPosition} />
       <div className="filters">
         <select
           aria-label={t("조회 범위", "Scope")}
@@ -790,6 +804,10 @@ export function JobDetail() {
               description={job.source}
               actions={
                 <>
+                  <SummaryTools
+                    id={id!}
+                    findingLink={selectedFindingLink(job, params)}
+                  />
                   <a className="button" href={`/api/scans/${id}/export`}>
                     JSON ↓
                   </a>
@@ -882,7 +900,13 @@ export function JobDetail() {
                 ["raw", "Raw JSON"],
               ]}
               selected={tab}
-              onChange={(v) => setParams({ tab: v })}
+              onChange={(v) =>
+                setParams((old) => {
+                  const next = new URLSearchParams(old);
+                  next.set("tab", v);
+                  return next;
+                })
+              }
             />
             {tab === "admission" && (
               <>
@@ -958,7 +982,7 @@ export function JobDetail() {
               </>
             )}
             {tab === "findings" && (
-              <Findings findings={job.result.findings || []} />
+              <Findings findings={job.result.findings || []} urlSelection />
             )}
             {tab === "comments" && (
               <Comments endpoint={`/scans/${id}/comments`} />
@@ -1177,41 +1201,127 @@ export function Admission({ job }: { job: Job }) {
     </section>
   );
 }
-export function Findings({ findings }: { findings: Finding[] }) {
-  const [filter, setFilter] = useState("all"),
-    [selected, setSelected] = useState(""),
-    t = useText();
-  const filtered = findings.filter(
-      (f) => filter === "all" || f.severity === filter,
-    ),
-    active = filtered.find((f) => f.fingerprint === selected) || filtered[0];
+function findingView(findings: Finding[], params: URLSearchParams) {
+  const entries = findingEntries(findings);
+  const filtered = filterFindings(entries, {
+    severity: params.get("severity") || "all",
+    engine: params.get("engine") || "all",
+    q: params.get("q") || "",
+  });
+  const query = parseFindingSelection(params);
+  const selection =
+    query.status === "valid"
+      ? selectFinding(findings, query.fingerprint, query.occurrence)
+      : query;
+  const active =
+    selection.status === "selected"
+      ? selection.entry
+      : selection.status === "absent"
+        ? filtered[0]
+        : undefined;
+  return { filtered, active, missing: selection.status === "missing" };
+}
+function selectedFindingLink(job: Job, params: URLSearchParams) {
+  const active = findingView(job.result.findings || [], params).active;
+  return active
+    ? findingHref(job.id, active.finding.fingerprint, active.occurrence)
+    : undefined;
+}
+export function Findings({
+  findings,
+  urlSelection = false,
+}: {
+  findings: Finding[];
+  urlSelection?: boolean;
+}) {
+  const [routeParams, setRouteParams] = useSearchParams();
+  const [localParams, setLocalParams] = useState(new URLSearchParams());
+  const params = urlSelection ? routeParams : localParams;
+  const t = useText();
+  const { filtered, active: entry, missing } = findingView(findings, params);
+  const active = entry?.finding;
+  function update(values: Record<string, string | null>) {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(values)) {
+      if (
+        value === null ||
+        value === "" ||
+        ((key === "severity" || key === "engine") && value === "all")
+      )
+        next.delete(key);
+      else next.set(key, value);
+    }
+    if (urlSelection) setRouteParams(next, { replace: true });
+    else setLocalParams(next);
+  }
   return (
     <>
-      <div className="filters">
+      <div className="filters finding-filters">
         <select
-          aria-label="Severity"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          aria-label={t("심각도", "Severity")}
+          value={params.get("severity") || "all"}
+          onChange={(e) => update({ severity: e.target.value })}
         >
           <option value="all">{t("모든 심각도", "All severities")}</option>
-          {["critical", "high", "medium", "low", "unknown"].map((s) => (
+          {["critical", "high", "medium", "low", "info", "unknown"].map((s) => (
             <option key={s}>{s}</option>
           ))}
         </select>
+        <select
+          aria-label={t("발견 엔진", "Finding engine")}
+          value={params.get("engine") || "all"}
+          onChange={(e) => update({ engine: e.target.value })}
+        >
+          <option value="all">{t("모든 엔진", "All engines")}</option>
+          {Array.from(new Set(findings.map((f) => f.engine))).map((engine) => (
+            <option key={engine}>{engine}</option>
+          ))}
+        </select>
+        <input
+          aria-label={t("발견 검색", "Finding search")}
+          placeholder={t("발견 검색", "Finding search")}
+          value={params.get("q") || ""}
+          onChange={(e) => update({ q: e.target.value })}
+          maxLength={200}
+        />
         <span>
           {filtered.length} {t("개 발견 사항", "findings")}
         </span>
       </div>
-      {filtered.length ? (
+      {missing && (
+        <div className="notice" role="status">
+          {t(
+            "이 결과에서 항목을 찾을 수 없습니다",
+            "This item cannot be found in this result.",
+          )}
+        </div>
+      )}
+      {entry && !filtered.some((e) => e.index === entry.index) && (
+        <div className="notice" role="status">
+          <p>
+            {t("필터 밖 항목입니다.", "Linked finding is outside the filters.")}
+          </p>
+          <button
+            onClick={() => update({ severity: null, engine: null, q: null })}
+          >
+            {t("발견 필터 초기화", "Reset finding filters")}
+          </button>
+        </div>
+      )}
+      {filtered.length > 0 || active ? (
         <div className="finding-inspector">
           <div className="finding-list">
-            {filtered.map((f) => (
+            {filtered.map(({ finding: f, index, occurrence }) => (
               <button
-                key={f.fingerprint}
-                onClick={() => setSelected(f.fingerprint)}
-                className={
-                  active?.fingerprint === f.fingerprint ? "selected" : ""
+                key={index}
+                onClick={() =>
+                  update({
+                    finding: f.fingerprint,
+                    occurrence: String(occurrence),
+                  })
                 }
+                className={entry?.index === index ? "selected" : ""}
+                aria-pressed={entry?.index === index}
               >
                 <div>
                   <Badge value={f.severity} />
@@ -1230,7 +1340,9 @@ export function Findings({ findings }: { findings: Finding[] }) {
           </div>
           {active && (
             <article className="finding-detail">
-              <span className="eyebrow">FINDING INSPECTOR</span>
+              <span className="eyebrow">
+                {t("발견 상세", "FINDING INSPECTOR")}
+              </span>
               <h2>{active.title}</h2>
               <Badge value={active.severity} />
               <p className="mono">{active.rule}</p>
@@ -1255,16 +1367,18 @@ export function Findings({ findings }: { findings: Finding[] }) {
                   )}
               </p>
               <details>
-                <summary>Fingerprint</summary>
+                <summary>{t("발견 지문", "Fingerprint")}</summary>
                 <Code>{active.fingerprint}</Code>
               </details>
             </article>
           )}
         </div>
       ) : (
-        <Empty>
-          {t("조건에 맞는 발견 사항이 없습니다.", "No matching findings.")}
-        </Empty>
+        !missing && (
+          <Empty>
+            {t("조건에 맞는 발견 사항이 없습니다.", "No matching findings.")}
+          </Empty>
+        )
       )}
     </>
   );

@@ -21,6 +21,7 @@ from .db import audit, record
 from .job_query import job_scope_filters, utc_window_start
 from .models import Comment, Job, Review, User
 from .notifications import emit_notification
+from .scan_summary import build_scan_summary
 from .schemas import CommentRequest, Reason, ReviewDecision, ScanRequest
 from .service import TERMINAL, owned_job
 
@@ -137,6 +138,79 @@ def get_scan(job_id: str, request: Request, a: Actor = Depends(actor)):
             review = s.scalar(query)
             payload["review"] = {"id": review.id, "status": review.status} if review else None
         return payload
+
+
+@router.get("/scans/{job_id}/summary")
+def scan_summary(
+    job_id: str,
+    request: Request,
+    format: Literal["markdown"] = "markdown",
+    a: Actor = Depends(actor),
+):
+    a.scope("scan:read")
+    if set(request.query_params) - {"format"} or len(request.query_params.getlist("format")) > 1:
+        raise HTTPException(422, "Unsupported summary query")
+    with request.app.state.db.session() as s:
+        job = owned_job(s, job_id, a)
+        # Explicit field projection: never pass ORM records, raw results or errors.
+        public = {
+            key: getattr(job, key)
+            for key in (
+                "id",
+                "source",
+                "ref",
+                "resolved_commit",
+                "content_hash",
+                "created_at",
+                "profile",
+                "status",
+                "verdict",
+                "effective_verdict",
+            )
+        }
+        public["coverage_complete"] = job.result.get("coverage_complete") is True
+        public["limitations"] = [v for v in job.result.get("limitations", []) if isinstance(v, str)]
+        public["engines"] = [
+            {key: engine.get(key) for key in ("name", "status")}
+            for engine in job.result.get("engines", [])
+        ]
+        public["findings"] = [
+            {
+                key: finding.get(key)
+                for key in (
+                    "severity",
+                    "engine",
+                    "rule",
+                    "title",
+                    "path",
+                    "line",
+                    "suppressed",
+                )
+            }
+            for finding in job.result.get("findings", [])
+        ]
+        public_review = None
+        if not a.key_id:
+            query = select(Review).where(Review.job_id == job_id)
+            if not a.staff:
+                query = query.where(Review.requester_id == a.id)
+            review = s.scalar(query)
+            if review:
+                public_review = {"status": review.status, "decision_reason": review.decision_reason}
+        content = build_scan_summary(
+            public,
+            public_review=public_review,
+            public_url=request.app.state.settings.public_url,
+        )
+        return Response(
+            content,
+            media_type="text/markdown",
+            headers={
+                "Content-Disposition": f'attachment; filename="scan-{job.id}.md"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
 
 @router.post("/scans/{job_id}/cancel")

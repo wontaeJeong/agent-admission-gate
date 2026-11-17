@@ -7,7 +7,12 @@ import { api, requestRecovery } from "./api";
 import { Link } from "react-router-dom";
 import { useText } from "./context";
 
-export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
+export function useLoad<T = any>(
+  path: string,
+  refresh = 0,
+  poll = 0,
+  responseType: "json" | "text" = "json",
+) {
   const [attempt, setAttempt] = useState(0);
   const dataPath = useRef(path);
   const [recovery, setRecovery] = useState({
@@ -25,7 +30,11 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
     let timer: ReturnType<typeof setTimeout>;
     const run = async () => {
       try {
-        const value = await api<T>(path, { signal: abort.signal });
+        const value = await api<T>(
+          path,
+          { signal: abort.signal },
+          responseType,
+        );
         if (live) {
           setSnapshot({ path, value });
           setError("");
@@ -60,7 +69,7 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
       abort.abort();
       clearTimeout(timer);
     };
-  }, [path, refresh, poll, attempt]);
+  }, [path, refresh, poll, attempt, responseType]);
   // Effects cannot invalidate the previous result until after this render.
   // Gate it here too, so consumers never use another request's count/content.
   const currentRequest = dataPath.current === path;

@@ -41,6 +41,7 @@ describe("Theme text contrast and brand token coverage", () => {
         ["--color-ink-muted", "--color-raised"],
         ["--color-accent", "--color-raised"],
         ["--color-on-accent", "--color-accent"],
+        ["--summary-print-ink", "--summary-print-canvas"],
       ])
         it(`${theme}/${palette} ${ink} on ${bg} meets WCAG AA`, () =>
           expect(contrast(values[ink], values[bg])).toBeGreaterThanOrEqual(
