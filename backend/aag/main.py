@@ -23,6 +23,7 @@ from .routes_notifications import router as notifications_router
 from .routes_profile import router as profile_router
 from .routes_saved_views import router as saved_views_router
 from .routes_scans import router as scans_router
+from .routes_search import router as search_router
 from .service import ScanService
 from .usage import ensure_mcp_http_start
 
@@ -162,6 +163,7 @@ def create_app(settings=None):
     for router in (
         identity_router,
         scans_router,
+        search_router,
         admin_router,
         metrics_router,
         boards_router,

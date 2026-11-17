@@ -119,3 +119,27 @@ it("preserves review workflow filters and literal all search through saved views
   rememberList("alice", "reviews", "/reviews?" + params, 920);
   expect(restoreList("alice", "reviews")?.scroll_y).toBe(920);
 });
+
+it("keeps search return context account-bound and rejects unknown query keys", () => {
+  rememberList(
+    "alice",
+    "search",
+    "/search?q=CVE&type=findings&scope=personal&cursor=safe",
+    240,
+  );
+  expect(restoreList("alice", "search")?.scroll_y).toBe(240);
+  expect(restoreList("bob", "search")).toBeNull();
+  for (const url of [
+    "/search?q=CVE&token=secret",
+    "/search?q=CVE&page=3",
+    "/jobs?q=CVE",
+  ]) {
+    expect(
+      validListState(
+        { accountId: "alice", resource: "search", list_url: url, scroll_y: 1 },
+        "alice",
+        "search",
+      ),
+    ).toBeNull();
+  }
+});

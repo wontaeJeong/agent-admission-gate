@@ -115,6 +115,7 @@ class Job(Base):
     target_commit: Mapped[str | None] = mapped_column(String(64))
     rerun_mode: Mapped[str | None] = mapped_column(String(20))
     resolved_commit: Mapped[str | None] = mapped_column(String(64))
+    finding_index_version: Mapped[int | None] = mapped_column(Integer)
     result: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[float] = mapped_column(Float, default=time.time, index=True)
@@ -122,7 +123,28 @@ class Job(Base):
     completed_at: Mapped[float | None] = mapped_column(Float)
     __table_args__ = (
         Index("ix_jobs_owner_created", "owner_id", "created_at"),
+        Index("ix_jobs_search_order", "created_at", "id"),
         Index("ix_jobs_owner_root_created", "owner_id", "lineage_root_id", "created_at"),
+    )
+
+
+class FindingIndex(Base):
+    __tablename__ = "finding_index"
+    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), primary_key=True)
+    ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(128))
+    engine: Mapped[str] = mapped_column(String(500))
+    rule: Mapped[str] = mapped_column(String(500))
+    severity: Mapped[str] = mapped_column(String(500))
+    title: Mapped[str] = mapped_column(String(500))
+    path: Mapped[str] = mapped_column(String(500))
+    line: Mapped[int | None] = mapped_column(Integer)
+    action: Mapped[str] = mapped_column(String(500))
+    search_text: Mapped[str] = mapped_column(Text)
+    schema_version: Mapped[int] = mapped_column(Integer)
+    __table_args__ = (
+        Index("ix_finding_index_fingerprint", "job_id", "fingerprint", "ordinal"),
+        Index("ix_finding_index_rule", "rule"),
     )
 
 

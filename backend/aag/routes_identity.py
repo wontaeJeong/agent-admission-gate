@@ -67,6 +67,7 @@ def auth_config(request: Request):
     return {
         "mode": settings.auth_mode,
         "boards_enabled": settings.boards_enabled,
+        "search_enabled": settings.search_enabled,
         "review_workflow_enabled": settings.review_workflow_enabled,
         "environment": settings.environment,
         "api_keys_state": api_keys_state(settings),

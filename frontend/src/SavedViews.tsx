@@ -104,6 +104,7 @@ export function ListBackLink({
     location = useLocation();
   const context =
     validListState(location.state?.list, user.id, resource) ||
+    validListState(location.state?.list, user.id, "search") ||
     restoreList(user.id, resource);
   return (
     <Link

@@ -15,6 +15,7 @@ from .models import ExceptionRule, Job
 from .notifications import notify_terminal
 from .policy import builtin_scan, decide, finding
 from .scanners import external
+from .search_index import index_job_findings
 from .sources import SourceError, clone, content_hash, extract_zip, validate_git_url
 
 TERMINAL = {"COMPLETED", "FAILED", "CANCELLED"}
@@ -233,6 +234,7 @@ class ScanService:
                                 verdict,
                             )
                             row.result, row.completed_at = result, time.time()
+                            index_job_findings(s, row)
                             audit(
                                 s,
                                 row.owner_id,

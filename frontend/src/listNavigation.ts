@@ -1,4 +1,4 @@
-export type ListResource = "jobs" | "reviews";
+export type ListResource = "jobs" | "reviews" | "search";
 export type ListState = {
   accountId: string;
   resource: ListResource;
@@ -7,6 +7,7 @@ export type ListState = {
 };
 export type ViewFilters = { version: number; [key: string]: string | number };
 const keys: Record<ListResource, string[]> = {
+  search: ["q", "type", "scope", "cursor"],
   jobs: ["scope", "days", "status", "verdict", "q", "mine"],
   reviews: ["tab", "status", "stage", "assignee", "q", "sort"],
 };
@@ -23,7 +24,10 @@ function validURL(resource: ListResource, value: unknown): value is string {
   return (
     path === "/" + resource &&
     [...new URLSearchParams(query).keys()].every((key) =>
-      [...keys[resource], "page"].includes(key),
+      (resource === "search"
+        ? keys[resource]
+        : [...keys[resource], "page"]
+      ).includes(key),
     )
   );
 }

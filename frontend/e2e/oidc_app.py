@@ -179,3 +179,17 @@ with app.state.db.session.begin() as s:
             },
         )
     )
+
+if app.state.settings.search_enabled:
+    from aag.search_index import index_job_findings
+    from aag.models import Review
+    with app.state.db.session.begin() as s:
+        job = s.get(Job, "a1-synthetic-job")
+        first = {**job.result["findings"][0], "rule": "CVE-2026-1234", "title": "CVE-2026-1234 first"}
+        second = {**first, "title": "CVE-2026-1234 second"}
+        job.result = {**job.result, "findings": [first, second]}
+        index_job_findings(s, job)
+        s.get(User, "a1-bob").reviewer = False
+        s.add(Review(id="search-review", job_id=job.id, requester_id=job.owner_id, reason="Synthetic review request"))
+        s.add(Job(id="search-unindexed", owner_id="a1-bob", source="pending-index.zip",
+                  source_type="upload", profile="static", status="COMPLETED", result={"findings": []}))

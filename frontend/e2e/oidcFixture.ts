@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 /** Own one isolated API/database; replace only the external provider boundary. */
 export async function startOidcFixture(
-  options: { reviewWorkflow?: boolean } = {},
+  options: { reviewWorkflow?: boolean; search?: boolean } = {},
 ) {
   const root = resolve(import.meta.dirname, "../..");
   const socket = createServer();
@@ -41,6 +41,7 @@ export async function startOidcFixture(
         AAG_DATABASE_URL: `sqlite:///${directory}/fixture.db`,
         AAG_OIDC_FIXTURE_DIR: directory,
         AAG_C1_FIXTURE: options.reviewWorkflow ? "true" : "false",
+        AAG_SEARCH_ENABLED: options.search ? "true" : "false",
       },
       stdio: "ignore",
     },
