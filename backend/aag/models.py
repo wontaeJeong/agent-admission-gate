@@ -133,9 +133,32 @@ class Review(Base):
     reason: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     reviewer_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    assignee_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    claimed_at: Mapped[float | None] = mapped_column(Float)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    workflow_state: Mapped[str] = mapped_column(
+        String(24), default="waiting", server_default="waiting"
+    )
     decision_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     decided_at: Mapped[float | None] = mapped_column(Float)
+
+    __table_args__ = (
+        Index("ix_reviews_queue", "status", "workflow_state", "assignee_id", "created_at"),
+    )
+
+
+class ReviewEvent(Base):
+    __tablename__ = "review_events"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
+    review_id: Mapped[str] = mapped_column(ForeignKey("reviews.id"))
+    actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(32))
+    from_state: Mapped[str] = mapped_column(String(24))
+    to_state: Mapped[str] = mapped_column(String(24))
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)
+    __table_args__ = (Index("ix_review_events_order", "review_id", "created_at", "id"),)
 
 
 class Comment(Base):

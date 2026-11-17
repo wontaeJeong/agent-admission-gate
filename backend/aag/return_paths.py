@@ -10,7 +10,7 @@ _ROUTES = (
     (r"/jobs/[A-Za-z0-9_-]+/summary", set()),
     (r"/jobs/[A-Za-z0-9_-]+/compare", {"baseline"}),
     (r"/new", {"from", "mode"}),
-    (r"/reviews", {"tab", "status", "workflow", "scope", "q", "page", "assignee"}),
+    (r"/reviews", {"tab", "status", "workflow", "scope", "q", "page", "assignee", "stage", "sort"}),
     (r"/reviews/[A-Za-z0-9_-]+", {"tab"}),
     (r"/boards", {"kind", "q", "page"}),
     (r"/boards/[A-Za-z0-9_-]+", set()),

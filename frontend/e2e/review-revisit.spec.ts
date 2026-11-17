@@ -21,6 +21,9 @@ const job = {
 };
 
 async function authenticate(page: Page, staff = false) {
+  await page.route("**/api/reviews/*/events*", (route) =>
+    route.fulfill({ json: { items: [], next_cursor: null } }),
+  );
   await page.route("**/api/profile", (route) =>
     route.fulfill({
       json: {
@@ -77,6 +80,10 @@ test("owners can revisit pending, approved and rejected reviews after reload", a
         requester_id: "requester",
         reason: "Synthetic review context",
         status,
+        revision: status === "pending" ? 1 : 2,
+        workflow_state: status === "pending" ? "waiting" : "closed",
+        assignee_id: null,
+        assignee: null,
         reviewer_id: null,
         decision_reason: null,
         created_at: 1760000003,

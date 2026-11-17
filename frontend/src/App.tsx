@@ -289,6 +289,7 @@ export default function App() {
       value={{
         user,
         boards: config.boards_enabled,
+        reviewWorkflow: config.review_workflow_enabled,
         apiKeysState: config.api_keys_state ?? "disabled",
         lang,
         syncDisplayName,

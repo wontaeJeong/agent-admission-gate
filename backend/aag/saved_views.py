@@ -71,7 +71,7 @@ def validate_filters(resource, filters):
     allowed = (
         {"version", "scope", "days", "status", "verdict", "q", "mine"}
         if resource == "jobs"
-        else {"version", "tab", "status"}
+        else {"version", "tab", "status", "stage", "assignee", "q", "sort"}
     )
     if set(filters) - allowed or type(filters.get("version")) is not int or filters["version"] != 1:
         raise ValueError("Unsupported filter schema or field")
@@ -84,8 +84,11 @@ def validate_filters(resource, filters):
         }
         if resource == "jobs"
         else {
-            "tab": {"mine", "pending", "approved", "all"},
-            "status": {"pending", "approved", "rejected"},
+            "tab": {"mine", "pending", "approved", "all", "actionable"},
+            "status": {"pending", "approved", "rejected", "withdrawn"},
+            "stage": {"waiting", "in_review", "changes_requested", "closed"},
+            "assignee": {"me", "unassigned", "any"},
+            "sort": {"newest", "oldest"},
         }
     )
     for key, values in enums.items():
@@ -105,6 +108,8 @@ def invalid_reason(a, resource, filters):
             return "검토자 자격이 필요합니다. 범위를 수정하세요. / Reviewer qualification required; edit scope."
         if filters.get("scope") == "all" and not a.staff:
             return "직원 권한이 필요합니다. 범위를 수정하세요. / Staff access required; edit scope."
+    elif filters.get("tab") == "actionable" and not a.reviewer:
+        return "검토자 자격이 필요합니다. / Reviewer qualification required."
     elif filters.get("tab", "mine") != "mine" and not a.staff:
         return "직원 권한이 필요합니다. 탭을 수정하세요. / Staff access required; edit tab."
     return None

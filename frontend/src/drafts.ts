@@ -2,6 +2,7 @@ export type DraftKind =
   | "scan_new"
   | "review_request"
   | "review_decision"
+  | "review_release"
   | "scan_comment"
   | "board_post";
 export type DraftFields = Record<string, string | boolean>;
@@ -33,6 +34,7 @@ const allowlists: Record<DraftKind, Record<string, "string" | "boolean">> = {
     force: "boolean",
   },
   review_request: { reason: "string" },
+  review_release: { reason: "string" },
   review_decision: { decision: "string", reason: "string" },
   scan_comment: { body: "string", internal: "boolean" },
   board_post: {

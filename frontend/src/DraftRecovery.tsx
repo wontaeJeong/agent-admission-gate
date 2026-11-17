@@ -13,7 +13,9 @@ export function DraftRecovery({
     reason:
       draft.candidate?.kind === "review_decision"
         ? t("결정 사유", "Decision reason")
-        : t("요청 사유", "Request reason"),
+        : draft.candidate?.kind === "review_release"
+          ? t("해제 사유", "Release reason")
+          : t("요청 사유", "Request reason"),
     body: t("본문", "Body"),
     title: t("제목", "Title"),
     visibility: t("공개 범위", "Visibility"),

@@ -34,14 +34,18 @@
 
 **인터페이스:** transition_review(s, actor, review_id, expected_revision, action, reason=None) -> ReviewDTO. C1 action은 claim/release다. DTO에 assignee{id,name,active,qualified}/workflow_state/revision을 추가한다. POST claim/release와 GET events를 제공한다. review_queue_predicates(actor, tab, stage, assignee)는 목록과 대시보드가 공유한다.
 
-- [ ] **1. 상태·권한 고정:** test_two_claims_one_winner는 성공1건/409 한 건, test_self_claim_forbidden은403, test_admin_without_reviewer_cannot_claim은403, test_other_assignee_cannot_decide는409를 검증한다. test_stale_claim_release_requires_reason과 test_events_owner_visibility도 작성한다.
-- [ ] **2. 실패 확인:** uv run pytest backend/tests/test_review_claims.py backend/tests/test_review_events.py -q.
-- [ ] **3. 데이터·전이 구현:** assignee_id/claimed_at/revision/workflow_state와 ReviewEvent를 추가한다. 기존 pending은 waiting, 종료 건은 closed로 backfill한다. claim은 pending/waiting/미배정 조건 CAS이며 release는 담당자/admin 또는 stale claim 해제 자격을 검사한다. claim 이벤트의 reason은 null, 사용자가 요구받은 해제 사유는5~4,000자다.
-- [ ] **4. 기존 결정 경로 연결:** unclaimed pending/waiting은 legacy 결정을 같은 트랜잭션에서 self-claim할 수 있게 한다. in_review는 현재 담당자만 결정한다. 자기 승인·coverage_complete·현재 자격·중복 결정 조건을 전부 포함한다. PostgreSQL에서도 row 조건이 DB에 적용되는지 실제 동시 요청으로 확인한다.
-- [ ] **5. UI·query 구현:** 담당/해제/내 담당/미배정/대기시간/업무 이력을 제공한다. 기존 tab=pending은 모든 미결 건으로 유지하고 stage·assignee·q·sort를 추가한다. 저장된 보기 allowlist와 대시보드 count/link를 같은 predicate로 맞춘다. 새 메뉴는 flag off에서 숨기되 담당 권한은 서버가 계속 검사한다.
+- [x] **1. 상태·권한 고정:** test_two_claims_one_winner는 성공1건/409 한 건, test_self_claim_forbidden은403, test_admin_without_reviewer_cannot_claim은403, test_other_assignee_cannot_decide는409를 검증한다. test_stale_claim_release_requires_reason과 test_events_owner_visibility도 작성한다.
+- [x] **2. 실패 확인:** uv run pytest backend/tests/test_review_claims.py backend/tests/test_review_events.py -q.
+- [x] **3. 데이터·전이 구현:** assignee_id/claimed_at/revision/workflow_state와 ReviewEvent를 추가한다. 기존 pending은 waiting, 종료 건은 closed로 backfill한다. claim은 pending/waiting/미배정 조건 CAS이며 release는 담당자/admin 또는 stale claim 해제 자격을 검사한다. claim 이벤트의 reason은 null, 사용자가 요구받은 해제 사유는5~4,000자다.
+- [x] **4. 기존 결정 경로 연결:** unclaimed pending/waiting은 legacy 결정을 같은 트랜잭션에서 self-claim할 수 있게 한다. in_review는 현재 담당자만 결정한다. 자기 승인·coverage_complete·현재 자격·중복 결정 조건을 전부 포함한다. PostgreSQL에서도 row 조건이 DB에 적용되는지 실제 동시 요청으로 확인한다.
+- [x] **5. UI·query 구현:** 담당/해제/내 담당/미배정/대기시간/업무 이력을 제공한다. 기존 tab=pending은 모든 미결 건으로 유지하고 stage·assignee·q·sort를 추가한다. 저장된 보기 allowlist와 대시보드 count/link를 같은 predicate로 맞춘다. 새 메뉴는 flag off에서 숨기되 담당 권한은 서버가 계속 검사한다.
 - [ ] **6. PR:** SQLite/PostgreSQL 경합, 기존 review/self-approval/owner/API-key 회귀, frontend build, review-claims E2E를 통과시킨다. 미배정/담당/경합/권한 상실 PC·모바일 이미지를 첨부해 feat: claim reviews and record workflow activity로 커밋·PR을 만든다.
 
 **완료:** F06의 담당·목록·감사. 알림 연결은 C2에서 확장한다.
+
+C1 구현 검증 기록(2026-11-17): 전체 backend255개 통과(SQLite/PostgreSQL 포함), 실제 동시 HTTP claim/claim·decision/release·legacy decision/claim, migration backfill/왕복/새 이력 존재 시 downgrade 거부. frontend build/112 unit/format, 전체 browser129개(5.8m), docs11페이지 빌드도 통과했다. 세부 명령과 RED/GREEN은 task-6-report에 기록한다. PR 링크/독립 검토/병합은 컨트롤러 진행 대기다.
+
+분할 스키마 확인: C1은 assignee_id/claimed_at/revision/workflow_state와 ReviewEvent를 추가한다. closed_reason은 C2, previous_review_id는 C3의 선형 migration으로 추가한다. 최종 설계의 전체 컬럼 목록을 C1에 미리 만들지 않는다. Scans.tsx의 기존 snapshot→markSubmitted→검토 상세 링크를 재사용한다(755–786, 915–934). 담당 작업은 기존 상세 링크 한 단계 뒤에서 제공하며 binding C1에 inline 작업 요구는 없다. 컨트롤러가 Scans 파일 목록 조정을 확인했다. routes_admin.py는 실제 PostgreSQL 권한 변경/결정 경합에서 확인된 FK 교착을 해결하기 위해 active-admin 잠금을 FOR NO KEY UPDATE로 낮추며 last-admin 직렬화는 유지한다.
 
 ## C2 철회와 보완 요청·응답
 

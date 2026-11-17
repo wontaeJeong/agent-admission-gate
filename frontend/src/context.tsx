@@ -3,6 +3,7 @@ import type { User } from "./api";
 export const AppContext = createContext<{
   user: User;
   boards: boolean;
+  reviewWorkflow?: boolean;
   apiKeysState: "available" | "disabled" | "identity_unconfigured";
   lang: string;
   syncDisplayName: (ownerId: string, refreshPage: boolean) => void;

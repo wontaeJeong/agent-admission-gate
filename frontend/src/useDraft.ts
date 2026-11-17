@@ -202,7 +202,6 @@ export function useDraft(options: Options) {
     const s = state.current;
     const revision = options.baseRevision ?? null;
     if (
-      !options.conflictToken ||
       !options.writable ||
       !s.loaded ||
       s.dirty ||
