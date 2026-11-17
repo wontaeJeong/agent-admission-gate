@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 test("local login returns to the validated destination", async ({ page }) => {
+  // A3 adjusts pages beyond the final result page; keep page three valid here
+  // so this A1 contract still isolates validated authentication return URLs.
+  await page.route("**/api/scans?**", (route) =>
+    route.fulfill({ json: { items: [], total: 75, page: 3, page_size: 25 } }),
+  );
   await page.goto(
     "/login?return_to=%2Fjobs%3Fscope%3Dpersonal%26page%3D3%26token%3Ddiscarded",
   );

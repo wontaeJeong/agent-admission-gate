@@ -71,11 +71,13 @@
 
 **인터페이스:** SavedView DTO는 id/resource/name/filters/is_default/revision/usable/invalid_reason이다. GET/POST /api/saved-views, PATCH/DELETE /api/saved-views/{id}. filters는 resource별 versioned allowlist다. rememberList(accountId, resource, url, scrollY) / restoreList(accountId, resource)로 목록 상태를 보존한다.
 
-- [ ] **1. 계약 사례 고정:** test_view_owner_isolation은 타인 ID404, test_view_limit은21번째409, test_view_revision_conflict는 오래된 revision409, test_one_default_after_race는 동시 설정 후 default 합계1을 확인한다. 공백 이름·미지원 필터·page/scroll 저장은422다.
-- [ ] **2. 실패 확인:** uv run pytest backend/tests/test_saved_views.py -q.
-- [ ] **3. 저장 계층 구현:** owner/resource/name unique와 DB partial unique index로 기본 보기를 최대1개로 제한한다. owner User 행의 update lock 이후 개수·기본 보기를 검증해 SQLite/PostgreSQL 모두 직렬화한다. default가 해제된 기존 행의 revision도 증가한다. 모든 작업은 interactive/account-bound이며 갱신은 CAS다.
-- [ ] **4. 화면 구현:** listNavigation으로 URL+scroll을 보존하고 상세의 고정/jobs 링크를 바꾼다. 명시 query>저장 default>표준 순서로 적용하며 비교 화면의 복귀도 같은 계약을 사용한다. 권한을 잃은 보기는 usable=false로 표시하고 수정·삭제를 제공한다.
-- [ ] **5. 브라우저 검증:** 필터된3페이지→상세→목록의 query/행/scroll, 직접 상세 진입, back/forward, 결과 감소로 무효가 된 페이지, 재로그인 뒤 default, staff 자격 상실, 다른 탭의 보기 수정 충돌을 확인한다.
+- [x] **1. 계약 사례 고정:** test_view_owner_isolation은 타인 ID404, test_view_limit은21번째409, test_view_revision_conflict는 오래된 revision409, test_one_default_after_race는 동시 설정 후 default 합계1을 확인한다. 공백 이름·미지원 필터·page/scroll 저장은422다.
+- [x] **2. 실패 확인:** uv run pytest backend/tests/test_saved_views.py -q.
+- [x] **3. 저장 계층 구현:** owner/resource/name unique와 DB partial unique index로 기본 보기를 최대1개로 제한한다. owner User 행의 update lock 이후 개수·기본 보기를 검증해 SQLite/PostgreSQL 모두 직렬화한다. default가 해제된 기존 행의 revision도 증가한다. 모든 작업은 interactive/account-bound이며 갱신은 CAS다.
+- [x] **4. 화면 구현:** listNavigation으로 URL+scroll을 보존하고 상세의 고정/jobs 링크를 바꾼다. 명시 query>저장 default>표준 순서로 적용하며 비교 화면의 복귀도 같은 계약을 사용한다. 권한을 잃은 보기는 usable=false로 표시하고 수정·삭제를 제공한다.
+- [x] **5. 브라우저 검증:** 필터된3페이지→상세→목록의 query/행/scroll, 직접 상세 진입, back/forward, 결과 감소로 무효가 된 페이지, 재로그인 뒤 default, staff 자격 상실, 다른 탭의 보기 수정 충돌을 확인한다.
 - [ ] **6. PR:** SQLite/PostgreSQL 대상 pytest, 단위/build/saved-views E2E, migration round trip을 통과시킨다. 저장 보기·권한 무효 이미지와 함께 feat: restore list context and save personal views로 커밋·PR을 만든다.
 
 **완료:** F03. C1/E2가 필터를 추가하면 allowlist와 저장 schema도 함께 갱신한다.
+
+구현·집중 검증 완료. 최종 전체 검증과 PR 생성/검토는 실행 보고서에서 추적하며 6단계는 PR 생성 전까지 미완료로 둔다. PR 링크: 생성 대기.

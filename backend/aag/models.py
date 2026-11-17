@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -251,3 +252,27 @@ class Usage(Base):
     cost_usd: Mapped[float | None] = mapped_column(Float)
     raw_usage: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[float] = mapped_column(Float, default=time.time, index=True)
+
+
+class SavedView(Base):
+    __tablename__ = "saved_views"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    resource: Mapped[str] = mapped_column(String(20))
+    name: Mapped[str] = mapped_column(String(40))
+    filters: Mapped[dict] = mapped_column(JSON)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[float] = mapped_column(Float, default=time.time)
+    updated_at: Mapped[float] = mapped_column(Float, default=time.time)
+    __table_args__ = (
+        UniqueConstraint("owner_id", "resource", "name", name="uq_saved_views_name"),
+        Index(
+            "uq_saved_views_default",
+            "owner_id",
+            "resource",
+            unique=True,
+            sqlite_where=text("is_default = 1"),
+            postgresql_where=text("is_default = true"),
+        ),
+    )

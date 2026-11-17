@@ -2,6 +2,11 @@ import { expect, test, type Page } from "@playwright/test";
 
 async function mockActivity(page: Page, reviewer: boolean) {
   const scanRequests: URLSearchParams[] = [];
+  // The list's personal preferences belong to this synthetic identity too.
+  await page.route("**/api/saved-views?**", (route) =>
+    route.fulfill({ json: [] }),
+  );
+
   await page.route("**/api/profile", (route) =>
     route.fulfill({
       json: {

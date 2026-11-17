@@ -21,6 +21,7 @@ from .routes_identity import router as identity_router
 from .routes_metrics import router as metrics_router
 from .routes_notifications import router as notifications_router
 from .routes_profile import router as profile_router
+from .routes_saved_views import router as saved_views_router
 from .routes_scans import router as scans_router
 from .service import ScanService
 from .usage import ensure_mcp_http_start
@@ -165,6 +166,7 @@ def create_app(settings=None):
         metrics_router,
         boards_router,
         profile_router,
+        saved_views_router,
         notifications_router,
     ):
         app.include_router(router)
