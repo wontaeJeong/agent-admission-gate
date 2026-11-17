@@ -3,6 +3,11 @@ import { expect, test } from "@playwright/test";
 // The account-race scenarios mock /auth/me and /profile; navigation must keep
 // that synthetic session rather than reaching an unauthenticated live API.
 test.beforeEach(async ({ page }) => {
+  // The list's personal preferences belong to this synthetic identity too.
+  await page.route("**/api/saved-views?**", (route) =>
+    route.fulfill({ json: [] }),
+  );
+
   await page.route("**/api/scans?**", (route) =>
     route.fulfill({
       json: { items: [], total: 0, page: 1, page_size: 25 },

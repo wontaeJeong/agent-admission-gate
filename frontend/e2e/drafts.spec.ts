@@ -27,6 +27,10 @@ async function fixture(page: Page) {
     qualified = true,
     status = "pending",
     role = "user";
+  // The list's personal preferences belong to this synthetic identity too.
+  await page.route("**/api/saved-views?**", (route) =>
+    route.fulfill({ json: [] }),
+  );
   await page.addInitScript(() => localStorage.setItem("aag-lang", "en"));
   await page.route("**/api/auth/config", (r) =>
     r.fulfill({ json: { mode: "local", boards_enabled: true } }),

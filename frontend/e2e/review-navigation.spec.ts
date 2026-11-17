@@ -3,6 +3,11 @@ import { expect, test } from "@playwright/test";
 // Both scenarios provide a synthetic identity; its shared profile read must
 // belong to the same synthetic session rather than the unauthenticated API.
 test.beforeEach(async ({ page }) => {
+  // The list's personal preferences belong to this synthetic identity too.
+  await page.route("**/api/saved-views?**", (route) =>
+    route.fulfill({ json: [] }),
+  );
+
   await page.route("**/api/profile", (route) =>
     route.fulfill({
       json: {

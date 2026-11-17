@@ -2,7 +2,13 @@ import { useDraft } from "../useDraft";
 import { DraftRecovery } from "../DraftRecovery";
 import { useDirtyForms } from "../DirtyForms";
 import { useAccountMutation } from "../accountMutations";
-import { useState, type FormEvent } from "react";
+import {
+  SavedViews,
+  ListLink,
+  ListBackLink,
+  useListContext,
+} from "../SavedViews";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Link,
   useNavigate,
@@ -50,6 +56,22 @@ export function Jobs() {
       (params.get("mine") === "true" || !staff ? "personal" : "all"),
     page = Number(params.get("page") || 1);
   const load = useLoad(`/scans?${params}`, 0, 5000);
+  useListContext("jobs", load.loading ? null : load.data, page);
+  const [query, setQuery] = useState(params.get("q") || "");
+  useEffect(() => setQuery(params.get("q") || ""), [params]);
+  useEffect(() => {
+    if (query === (params.get("q") || "")) return;
+    const timer = setTimeout(() => {
+      const next = new URLSearchParams(params);
+      if (query) next.set("q", query);
+      else next.delete("q");
+      next.set("page", "1");
+      setParams(next);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, params, setParams]);
+  const unavailable =
+    (scope === "all" && !staff) || (scope === "review" && !user.reviewer);
   const change = (key: string, value: string) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value);
@@ -73,6 +95,7 @@ export function Jobs() {
           </Link>
         }
       />
+      <SavedViews resource="jobs" />
       <div className="filters">
         <select
           aria-label={t("조회 범위", "Scope")}
@@ -116,8 +139,8 @@ export function Jobs() {
               "저장소 또는 파일 검색",
               "Search repository or file",
             )}
-            value={params.get("q") || ""}
-            onChange={(e) => change("q", e.target.value)}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
           />
         </label>
         <select
@@ -153,6 +176,14 @@ export function Jobs() {
           </label>
         )}
       </div>
+      {unavailable && (
+        <p className="panel-note" role="status">
+          {t(
+            "이 범위에는 직원 또는 검토자 자격이 필요합니다. 조회 범위를 수정하세요.",
+            "Staff access required; edit scope. Reviewer scope requires reviewer qualification.",
+          )}
+        </p>
+      )}
       <State {...load}>
         {load.data && (
           <section className="panel">
@@ -177,14 +208,18 @@ export function Jobs() {
                     {load.data.items.map((j: Job) => (
                       <tr key={j.id}>
                         <td>
-                          <Link className="source-link" to={"/jobs/" + j.id}>
+                          <ListLink
+                            resource="jobs"
+                            className="source-link"
+                            to={"/jobs/" + j.id}
+                          >
                             {j.source_type === "git" ? (
                               <GitBranch size={16} />
                             ) : (
                               <FileArchive size={16} />
                             )}
                             <span>{j.source}</span>
-                          </Link>
+                          </ListLink>
                           <small className="mono">{j.id.slice(0, 12)}</small>
                         </td>
                         <td>{j.profile}</td>
@@ -196,9 +231,9 @@ export function Jobs() {
                         </td>
                         <td className="muted">{timestamp(j.created_at)}</td>
                         <td>
-                          <Link to={"/jobs/" + j.id}>
+                          <ListLink resource="jobs" to={"/jobs/" + j.id}>
                             <ArrowUpRight size={17} />
-                          </Link>
+                          </ListLink>
                         </td>
                       </tr>
                     ))}
@@ -522,10 +557,10 @@ export function JobDetail() {
   }
   return (
     <>
-      <Link className="back" to="/jobs">
+      <ListBackLink resource="jobs" className="back">
         <ArrowLeft size={15} />
         {t("작업 목록", "Scans")}
-      </Link>
+      </ListBackLink>
       <State
         {...load}
         preserveContent={!!job && (!load.error || load.retryable)}
