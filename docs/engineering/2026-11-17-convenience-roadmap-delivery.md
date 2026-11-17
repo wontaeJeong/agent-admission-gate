@@ -76,7 +76,13 @@ C1/C2/C3는 각각 대표 10개를 검토했고 추가 색상/크기 변형 전�
 - **I1 — 성공 HTTP의 생성 DTO 누락:** 기존 api()는 성공 JSON 해석 실패를 빈 객체로 바꿔 새 검사/재검사/검토 요청/C3 후속 요청/새 게시글이 초안을 지우고 undefined 대상으로 이동할 수 있었다. 이번 수정은 본문 해석 실패를 불명확한 결과로 처리하고 생성 ID 확인 뒤에만 강한 receipt 초기화·이동을 허용한다. 명시적인 HTTP 204/205 무본문과 text 응답은 유지한다. 새 검토/게시글에도 명시적인 현재 리소스 GET을 제공하고 그 전 재제출을 막는다. polling이 새 검토를 발견해도 입력은 유지한다. 필수 ID가 누락된 GET 응답은 확인 완료로 처리하지 않는다. 검토 상태의 잘못된 falsy 값에 대한 잔여 처리는 아래 M6에 남긴다. 게시글의 확인 GET은 주변 현재 목록도 갱신하며 새 입력을 지우지 않는다.
 - **I2 — 오래된 전달 추적:** 이 문서와 로드맵·A/B/C/D/E 원본 플랜·요구사항을 14개 실제 병합으로 맞췄다. ignored 실행 파일만을 근거 링크로 쓰지 않는다. 이전 판단/비용·Minor·운영하지 않은 영역을 남긴다.
 
-수정은 [PR #30](https://github.com/wontaeJeong/agent-admission-gate/pull/30), 브랜치는 fix/convenience-final-response-recovery, 기준은 PR #29 squash다. 독립 범위 재검토는 I2를 해결로 확인했고 I1의 초안 손실·undefined 이동을 수정한 뒤 아래 M6만 비차단으로 남겼다. Critical/Important 잔여는 없다. 원래 판단 22건에 최종 잔여 판단 1건을 추가했다. **정확한 최종 head 필수 CI 5개 성공이 병합 조건**이며 실제 head·CI run·병합 SHA는 PR #30에 기록한다. 제품 코드는 11e69e5에서 검증한 뒤 같고 이후 변경은 이 최종 판단의 문서 기록뿐이다. 미래 CI/병합 성공을 만들거나 PR #29 검증을 이번 수정의 CI로 대체하지 않는다.
+수정은 [PR #30](https://github.com/wontaeJeong/agent-admission-gate/pull/30), 브랜치는 fix/convenience-final-response-recovery, 기준은 PR #29 squash다. 독립 범위 재검토는 I2를 해결로 확인했고 I1의 초안 손실·undefined 이동을 수정한 뒤 아래 M6만 비차단으로 남겼다. Critical/Important 잔여는 없다. 원래 판단 22건에 최종 잔여 판단과 CI 호환성 판단 각 1건을 추가해 현재 24건이다. **정확한 최종 head 필수 CI 5개 성공이 병합 조건**이며 실제 head·CI run·병합 SHA는 PR #30에 기록한다. 제품 코드는 11e69e5에서 검증한 뒤 같고 이후 변경은 최종 판단의 문서 기록과 기존 브라우저 테스트 기대의 계약 정합화다. 미래 CI/병합 성공을 만들거나 PR #29 검증을 이번 수정의 CI로 대체하지 않는다.
+
+### 최종 CI 호환성 검증
+
+수정 전 [CI 44085112810](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44085112810)은 browser 198/199 통과(12.5분), 기존 review-revisit.spec.ts의 503 뒤 즉시 버튼 활성화 기대 1개 실패였다. backend·docs·container(runtime)·container(scanners) 4개 job은 성공했다. 승인된 불명확 생성의 명시적 현재 리소스 GET 계약과 충돌하는 테스트 기대이며 인프라 실패가 아니다. 새 포트에서 해당 사례 단독 RED 1개를 재현한 뒤 제품 코드 없이 기대만 정합화했다. 입력 보존·busy·상태 없음 검증을 유지하고, POST 1회·강제 submit 차단·GET 완료 전 비활성·literal null 확인 후 활성화를 검증한다.
+
+수정 후 review-revisit.spec.ts 6개와 creation-recovery.spec.ts 15개가 **21/21 통과(54.2초, retry/skip 없음)**했다. format:check와 변경된 요구사항의 docs 11페이지 build도 통과했다. 이전 로컬 118개 집합에 기존 재방문 테스트를 빠뜨린 원인과 예방은 실패 교훈에 기록했다. 제품 코드·M6·화면 증거는 그대로이며 새 전체 CI 결과를 이 집중 검증으로 대신하지 않는다. 새 정확한 head 필수 CI 성공은 여전히 PR #30 병합 조건이다.
 
 ### 최종 수정 재현과 검증
 
@@ -180,3 +186,5 @@ B1의 초기 메타데이터 한/영 누락은 Minor로 잘못 분류됐다가 �
 ## 최종 범위 재검토의 추가 판단과 비용
 
 23. Ruling: Final scoped residual I1/R1 is parked as nonblocking M6 — malformed falsy review state can enable only a manually chosen retry; unchanged server existing-review check, unique job_id and race-to-409 prevent duplicate creation, and the frontend retains input with no automatic POST — cost if wrong: misleading verification and one avoidable server-rejected retry until literal-null-or-valid-review validation is tightened; revisit if server duplicate guards change.
+
+24. Ruling: Update the legacy review-revisit 503 assertion to require explicit current-resource GET before retry — final CI proved its immediate-enable expectation contradicts the approved uncertain-write recovery contract, while all 198 other browser cases pass — cost if wrong: the test is coupled to that retry policy and must change if the contract changes, plus one additional exact-head CI cycle. Product code and parked M6 remain unchanged; this is CI compatibility validation, not a second product fix wave.

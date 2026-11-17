@@ -146,11 +146,21 @@ test("request form handles unavailable status, submission errors and busy state"
 }) => {
   await authenticate(page);
   let summary: null | undefined = null;
-  await page.route("**/api/scans/sample-scan", (route) =>
-    route.fulfill({ json: summary === null ? { ...job, review: null } : job }),
-  );
+  let holdVerification = false;
+  let completeVerification: (() => void) | undefined;
+  await page.route("**/api/scans/sample-scan", async (route) => {
+    if (holdVerification)
+      await new Promise<void>((resolve) => {
+        completeVerification = resolve;
+      });
+    await route.fulfill({
+      json: summary === null ? { ...job, review: null } : job,
+    });
+  });
   let completeRequest: (() => void) | undefined;
+  let requestCount = 0;
   await page.route("**/api/scans/sample-scan/review", async (route) => {
+    requestCount++;
     await new Promise<void>((resolve) => {
       completeRequest = resolve;
     });
@@ -177,8 +187,23 @@ test("request form handles unavailable status, submission errors and busy state"
   await expect(page.getByRole("alert")).toContainText(
     "Review service unavailable",
   );
+  await expect(button).toBeDisabled();
+  await expect(reason).toHaveValue("Synthetic request reason");
+  await reason.locator("xpath=ancestor::form").dispatchEvent("submit");
+  expect(requestCount).toBe(1);
+  holdVerification = true;
+  const check = page.getByRole("button", { name: "Check latest review" });
+  await check.click();
+  await expect.poll(() => !!completeVerification).toBe(true);
+  await expect(check).toBeDisabled();
+  await expect(button).toBeDisabled();
+  await expect(reason).toHaveValue("Synthetic request reason");
+  expect(requestCount).toBe(1);
+  holdVerification = false;
+  completeVerification!();
   await expect(button).toBeEnabled();
   await expect(reason).toHaveValue("Synthetic request reason");
+  expect(requestCount).toBe(1);
   summary = undefined;
   await page.reload();
   await expect(
