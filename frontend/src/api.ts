@@ -8,6 +8,29 @@ export class APIError extends Error {
     super(message);
   }
 }
+/** A write may have committed even though its successful response is unusable.
+ * TypeError keeps existing transport-uncertainty handlers and GET recovery aligned.
+ * Never include raw response fragments in this error.
+ */
+export class APIResponseError extends TypeError {
+  constructor() {
+    super(
+      "Response could not be read. Check the current resource before retrying.",
+    );
+  }
+}
+export function requireResourceIdentity<T>(
+  value: T,
+): asserts value is T & { id: string } {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("id" in value) ||
+    typeof value.id !== "string" ||
+    !value.id.trim()
+  )
+    throw new APIResponseError();
+}
 /** Read recovery never gives a write request a replay action. */
 export function requestRecovery(error: unknown, method: string) {
   return {
@@ -36,10 +59,20 @@ export async function api<T = any>(
       ...init.headers,
     },
   });
-  const data =
-    response.ok && responseType === "text"
-      ? await response.text()
-      : await response.json().catch(() => ({}));
+  let data: any;
+  let unreadable = false;
+  try {
+    // Only these HTTP statuses explicitly promise no response content.
+    data =
+      response.ok && [204, 205].includes(response.status)
+        ? undefined
+        : response.ok && responseType === "text"
+          ? await response.text()
+          : await response.json();
+  } catch {
+    unreadable = response.ok;
+    data = {};
+  }
   if (!sessionCoordinator.isCurrent(capture))
     throw new APIError(
       409,
@@ -50,14 +83,15 @@ export async function api<T = any>(
   if (!response.ok)
     throw new APIError(
       response.status,
-      typeof data.detail === "string"
+      typeof data?.detail === "string"
         ? data.detail
-        : Array.isArray(data.detail)
+        : Array.isArray(data?.detail)
           ? data.detail.map((d: any) => d.msg).join("; ")
-          : typeof data.detail?.message === "string"
+          : typeof data?.detail?.message === "string"
             ? data.detail.message
             : `HTTP ${response.status}`,
     );
+  if (unreadable) throw new APIResponseError();
   return data;
 }
 export const send = <T = any>(path: string, body: unknown, method = "POST") =>

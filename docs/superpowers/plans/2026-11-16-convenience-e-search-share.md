@@ -1,6 +1,8 @@
 # 검색과 결과 공유 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 현재 요청은 설계·플랜 작성이며 이 문서 자체가 제품 구현 시작 지시는 아니다.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 아래 단계는 원래 구현 계획이며 체크는 2026-11-17의 실제 기능 PR 병합을 반영한다. 운영 배포·활성화 완료 표시는 아니다.
+
+**전달 상태 (2026-11-17):** [E1 · PR #20](https://github.com/wontaeJeong/agent-admission-gate/pull/20), [E2 · PR #26](https://github.com/wontaeJeong/agent-admission-gate/pull/26) 병합. 각 최종 head의 독립 검토와 필수 CI 5개 성공을 확인했다. 정확한 head/CI·검증 시점·화면·판단 비용·남은 Minor는 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)을 따른다. 전체 검토 I1/I2의 최종 수정은 별도 PR의 범위 재검토·정확한 head CI가 병합 조건이다.
 
 **Goal:** F08·F09의 검색 확장, 특정 발견 링크, Markdown 요약·인쇄를 제공한다.
 
@@ -40,7 +42,7 @@
 - [x] **4. 화면 구현:** severity/engine/q/선택을 URL에 보존한다. 유효 선택이 필터 밖이면 선택 상세와 '필터 밖 항목' 안내를 표시하고 필터 초기화 버튼을 제공한다. 없는 선택은 누락 상태를 보여준다. 복사 실패를 알리고 인쇄 화면은 safe summary+print CSS를 사용한다.
 - [x] **5. PR:** 대상 pytest·선택 단위·frontend build·scan-sharing E2E로 로그인 복귀, 중복/없는 발견, 제한된 요약, 모바일 공유·인쇄를 검증한다. 이미지와 함께 feat: share precise findings and readable scan summaries로 커밋·PR을 만든다.
 
-**구현 상태 (2026-11-17):** [PR #20](https://github.com/wontaeJeong/agent-admission-gate/pull/20) 생성과 대표 이미지 준비. 리뷰 I1의 literal q=`all`/`allow` 보존을 실제 순차 입력·URL 유지 회귀로 보완했습니다. 최종 CI·독립 재검토·병합은 controller 단계입니다. 검증 상세는 실행 보고서 task-5-report.md에 기록합니다.
+**구현 상태 (2026-11-17):** [PR #20](https://github.com/wontaeJeong/agent-admission-gate/pull/20) 생성과 대표 이미지 준비. 리뷰 I1의 literal q=`all`/`allow` 보존을 실제 순차 입력·URL 유지 회귀로 보완했습니다. 최종 재검토와 CI 44022208395 성공 후 병합됐습니다. 검증 상세는 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)에 기록합니다.
 
 **완료 기준:** F09. 검색 결과는 동일한 fingerprint/occurrence 링크를 사용한다.
 
@@ -52,11 +54,13 @@
 
 **인터페이스:** GET /api/search?q=&type=scans|reviews|findings&scope=personal|review|all&page_size=&cursor=. 응답은 items/next_cursor/total/index_complete다. index_job_findings(s, job) -> None과 CLI aag reindex-findings --batch-size 100을 제공한다. 각 결과는kind/id/label/safe_snippet/href만 포함한다.
 
-- [ ] **1. 권한·입력 고정:** test_hidden_job_absent_from_items_total_cursor, test_reviewer_scope_matches_source_query, test_api_key_search_forbidden, test_literal_percent_and_underscore, test_query_length_and_tokens, test_index_pending_not_zero, test_current_verdict_from_job_join을 작성한다.
-- [ ] **2. 실패 확인:** uv run pytest backend/tests/test_search.py backend/tests/test_search_index.py -q.
-- [ ] **3. 색인 구현:** FindingIndex의 job_id/ordinal unique와 safe field projection, Job.finding_index_version을 추가한다. 완료 result 저장과 색인 갱신을 같은 트랜잭션으로 묶는다. 캐시 재사용도 새 job으로 색인한다. 기존 기록은100개 ID씩 조회하고 결과 본문은 한 작업씩 처리하며 완료한 작업만 version을 갱신한다.
-- [ ] **4. 검색 API:** 원본 Job/Review 권한 predicate 이후 token AND·count·limit를 적용한다. created_at desc/id desc/ordinal을 cursor에 포함한다. 검토 판정은 live join하고 내부 데이터는 projection에서 제외한다. 색인 중단·구버전은 index_complete=false로 응답하며 검색 불가능한 항목을0개라고 단정하지 않는다.
-- [ ] **5. UI:** /search와 상단 검색을 제공한다. 유형·scope·검색어를 URL로 유지하고 debounce·AbortController·generation으로 오래된 응답을 폐기한다. Cmd/Ctrl+K는 입력창/IME 중 무시한다. CVE·작업ID·경로 결과를 E1 링크로 열고 권한 없음·준비 중·0건·오류를 구분한다.
-- [ ] **6. PR:** SQLite/PostgreSQL의 같은 fixture 결과·실제 query plan·synthetic 10만 발견의 최초/다음 페이지를 확인한다. backfill 중단/재개·캐시·유효 판정 변화, frontend build, search E2E를 검증한다. 실제 환경의 측정 시간을 PR에 기록하며 측정 없이 성능 보장을 쓰지 않는다. PC/모바일·색인 준비 상태 이미지와 함께 feat: search authorized scan and review evidence로 커밋·PR을 만든다.
+- [x] **1. 권한·입력 고정:** test_hidden_job_absent_from_items_total_cursor, test_reviewer_scope_matches_source_query, test_api_key_search_forbidden, test_literal_percent_and_underscore, test_query_length_and_tokens, test_index_pending_not_zero, test_current_verdict_from_job_join을 작성한다.
+- [x] **2. 실패 확인:** uv run pytest backend/tests/test_search.py backend/tests/test_search_index.py -q.
+- [x] **3. 색인 구현:** FindingIndex의 job_id/ordinal unique와 safe field projection, Job.finding_index_version을 추가한다. 완료 result 저장과 색인 갱신을 같은 트랜잭션으로 묶는다. 캐시 재사용도 새 job으로 색인한다. 기존 기록은100개 ID씩 조회하고 결과 본문은 한 작업씩 처리하며 완료한 작업만 version을 갱신한다.
+- [x] **4. 검색 API:** 원본 Job/Review 권한 predicate 이후 token AND·count·limit를 적용한다. created_at desc/id desc/ordinal을 cursor에 포함한다. 검토 판정은 live join하고 내부 데이터는 projection에서 제외한다. 색인 중단·구버전은 index_complete=false로 응답하며 검색 불가능한 항목을0개라고 단정하지 않는다.
+- [x] **5. UI:** /search와 상단 검색을 제공한다. 유형·scope·검색어를 URL로 유지하고 debounce·AbortController·generation으로 오래된 응답을 폐기한다. Cmd/Ctrl+K는 입력창/IME 중 무시한다. CVE·작업ID·경로 결과를 E1 링크로 열고 권한 없음·준비 중·0건·오류를 구분한다.
+- [x] **6. PR:** SQLite/PostgreSQL의 같은 fixture 결과·실제 query plan·synthetic 10만 발견의 최초/다음 페이지를 확인한다. backfill 중단/재개·캐시·유효 판정 변화, frontend build, search E2E를 검증한다. 실제 환경의 측정 시간을 PR에 기록하며 측정 없이 성능 보장을 쓰지 않는다. PC/모바일·색인 준비 상태 이미지와 함께 feat: search authorized scan and review evidence로 커밋·PR을 만든다.
 
 **완료:** F08. 기준 구현에서 LIKE 검색 지연이 크면 측정 자료를 근거로 별도 DB 색인 최적화를 진행한다.
+
+E2는 PR #26으로 병합됐다. routes_scans/routes_metrics가 이미 소비하는 job_scope_filters/review_queue_predicates를 검색도 재사용하므로 no-op 수정은 하지 않았다. 세 소비자의 일관성 유지 비용과 합성 10만 발견의 실제 측정 한계는 전달 기록 판단 16 및 운영 한계를 따른다.

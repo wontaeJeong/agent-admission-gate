@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ListLink } from "../SavedViews";
 import type { Job } from "../api";
-import { api, APIError, timestamp } from "../api";
+import {
+  api,
+  APIError,
+  APIResponseError,
+  requireResourceIdentity,
+  timestamp,
+} from "../api";
 import { useAccountMutation } from "../accountMutations";
 import { useApp, useText } from "../context";
 import { DraftRecovery } from "../DraftRecovery";
@@ -243,7 +249,9 @@ function ReviewAction({
     [conflictToken, setConflictToken] = useState<object | null>(null),
     [rejected, setRejected] = useState<number | null>(null),
     [denied, setDenied] = useState(false),
-    [uncertain, setUncertain] = useState(false);
+    [uncertain, setUncertain] = useState(false),
+    [verifiedFollowUp, setVerifiedFollowUp] = useState<string | null>(null);
+  const pending = useRef(false);
   const current =
     readVerified &&
     (rejected === null || r.revision > rejected) &&
@@ -259,6 +267,8 @@ function ReviewAction({
     conflictToken,
   });
   async function mutate(target: Action | "claim") {
+    if (pending.current || draft.locked || !current) return;
+    pending.current = true;
     const submission = draft.beginSubmission();
     setBusy(true);
     setError("");
@@ -270,6 +280,7 @@ function ReviewAction({
           ? { reason: submission.fields.reason }
           : {}),
       });
+      if (target === "follow-ups") requireResourceIdentity(result);
       if (!draft.markSubmitted(submission)) return;
       setOpen(false);
       if (target === "follow-ups") navigate("/reviews/" + result.id);
@@ -290,7 +301,10 @@ function ReviewAction({
       if (e instanceof TypeError || (e instanceof APIError && e.status >= 500))
         setUncertain(true);
     } finally {
-      if (draft.isCurrentSubmission(submission)) setBusy(false);
+      if (draft.isCurrentSubmission(submission)) {
+        pending.current = false;
+        setBusy(false);
+      }
     }
   }
   async function verifyOutcome() {
@@ -299,6 +313,12 @@ function ReviewAction({
     try {
       const latest = await api("/reviews/" + r.id);
       if (!draft.isCurrentSubmission(receipt)) return;
+      requireResourceIdentity(latest);
+      if (!Number.isInteger(latest.revision)) throw new APIResponseError();
+      if (action === "follow-ups" && latest.next_review_id) {
+        requireResourceIdentity({ id: latest.next_review_id });
+        setVerifiedFollowUp(latest.next_review_id);
+      }
       if (latest.revision !== r.revision) {
         setConflictToken({});
         setRejected(receipt.baseRevision);
@@ -342,6 +362,11 @@ function ReviewAction({
           {t("최신 검토 확인", "Check latest review")}
         </button>
       )}
+      {verifiedFollowUp && (
+        <Link to={"/reviews/" + verifiedFollowUp}>
+          {t("확인된 후속 검토 보기", "View verified follow-up review")}
+        </Link>
+      )}
       <DraftRecovery draft={draft} />
       {reviewWorkflow && (
         <>
@@ -360,7 +385,7 @@ function ReviewAction({
               {labels[0]}
             </button>
           )}
-          {open && eligible && (
+          {open && (eligible || uncertain || !!verifiedFollowUp) && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();

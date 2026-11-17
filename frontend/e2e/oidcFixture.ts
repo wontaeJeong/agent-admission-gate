@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 export async function startOidcFixture(
   options: {
     reviewWorkflow?: boolean;
+    boards?: boolean;
     keyReplacement?: boolean | "disabled";
     search?: boolean;
     notificationTargets?: boolean;
@@ -53,6 +54,7 @@ export async function startOidcFixture(
         AAG_DATABASE_URL: `sqlite:///${directory}/fixture.db`,
         AAG_OIDC_FIXTURE_DIR: directory,
         AAG_EXPIRATION_REMINDERS_FIXTURE: options.expirationReminders || "",
+        AAG_BOARDS_ENABLED: options.boards ? "true" : "false",
         AAG_C1_FIXTURE: options.reviewWorkflow ? "true" : "false",
         AAG_D3_FIXTURE: options.keyReplacement ? "true" : "false",
         AAG_D3_ISSUANCE_DISABLED:

@@ -1,6 +1,8 @@
 # 검토 담당과 보완 흐름 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 현재 요청은 설계·플랜 작성이며 이 문서 자체가 제품 구현 시작 지시는 아니다.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 아래 단계는 원래 구현 계획이며 체크는 2026-11-17의 실제 기능 PR 병합을 반영한다. 운영 배포·활성화 완료 표시는 아니다.
+
+**전달 상태 (2026-11-17):** [C1 · PR #21](https://github.com/wontaeJeong/agent-admission-gate/pull/21), [C2 · PR #22](https://github.com/wontaeJeong/agent-admission-gate/pull/22), [C3 · PR #23](https://github.com/wontaeJeong/agent-admission-gate/pull/23) 병합. 각 최종 head의 독립 검토와 필수 CI 5개 성공을 확인했다. 정확한 head/CI·검증 시점·화면·판단 비용·남은 Minor는 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)을 따른다. 전체 검토 I1/I2의 최종 수정은 별도 PR의 범위 재검토·정확한 head CI가 병합 조건이다.
 
 **Goal:** F06·F10의 담당자, 철회, 보완 요청·응답, 수정본의 후속 검토를 제공한다.
 
@@ -43,7 +45,7 @@
 
 **완료:** F06의 담당·목록·감사. 알림 연결은 C2에서 확장한다.
 
-C1 구현 검증 기록(2026-11-17): 전체 backend255개 통과(SQLite/PostgreSQL 포함), 실제 동시 HTTP claim/claim·decision/release·legacy decision/claim, migration backfill/왕복/새 이력 존재 시 downgrade 거부. frontend build/112 unit/format, 전체 browser129개(5.8m), docs11페이지 빌드도 통과했다. 세부 명령과 RED/GREEN은 task-6-report에 기록한다. [PR #21](https://github.com/wontaeJeong/agent-admission-gate/pull/21)은 독립 검토와 필수 CI 후 병합되었다.
+C1 구현 검증 기록(2026-11-17): 전체 backend255개 통과(SQLite/PostgreSQL 포함), 실제 동시 HTTP claim/claim·decision/release·legacy decision/claim, migration backfill/왕복/새 이력 존재 시 downgrade 거부. frontend build/112 unit/format, 전체 browser129개(5.8m), docs11페이지 빌드도 통과했다. 세부 명령과 RED/GREEN은 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)에 기록한다. [PR #21](https://github.com/wontaeJeong/agent-admission-gate/pull/21)은 독립 검토와 필수 CI 후 병합되었다.
 
 분할 스키마 확인: C1은 assignee_id/claimed_at/revision/workflow_state와 ReviewEvent를 추가한다. closed_reason은 C2, previous_review_id는 C3의 선형 migration으로 추가한다. 최종 설계의 전체 컬럼 목록을 C1에 미리 만들지 않는다. Scans.tsx의 기존 snapshot→markSubmitted→검토 상세 링크를 재사용한다(755–786, 915–934). 담당 작업은 기존 상세 링크 한 단계 뒤에서 제공하며 binding C1에 inline 작업 요구는 없다. 컨트롤러가 Scans 파일 목록 조정을 확인했다. routes_admin.py는 실제 PostgreSQL 권한 변경/결정 경합에서 확인된 FK 교착을 해결하기 위해 active-admin 잠금을 FOR NO KEY UPDATE로 낮추며 last-admin 직렬화는 유지한다.
 
@@ -64,9 +66,9 @@ C1 구현 검증 기록(2026-11-17): 전체 backend255개 통과(SQLite/PostgreS
 
 **완료:** F10의 철회·보완. F06 변경 알림까지 연결한다.
 
-C2 최종 검증(2026-11-17): backend305(SQLite/PostgreSQL 실제 경합·migration 포함), frontend112 unit, 전체 browser133, build/format/ruff/docs11페이지가 통과했다. 세부 RED/GREEN과 셸 wrapper 오류 구분은 task-7-report에 기록한다.
+C2 최종 검증(2026-11-17): backend305(SQLite/PostgreSQL 실제 경합·migration 포함), frontend112 unit, 전체 browser133, build/format/ruff/docs11페이지가 통과했다. 세부 RED/GREEN과 셸 wrapper 오류 구분은 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)에 기록한다.
 
-C2 구현은 ReviewActivity의 공통 전이 폼과 drafts.ts/DraftRecovery를 확장한다. 기존 useDraft의 제출 receipt와 api의 계정 바인딩을 그대로 사용하며 불필요한 파일 수정은 하지 않는다. 검증·화면 증거·독립 검토 기록은 task-7-report다. [PR #22](https://github.com/wontaeJeong/agent-admission-gate/pull/22)로 병합했다. previous_review_id는 C3에서 추가한다.
+C2 구현은 ReviewActivity의 공통 전이 폼과 drafts.ts/DraftRecovery를 확장한다. 기존 useDraft의 제출 receipt와 api의 계정 바인딩을 그대로 사용하며 불필요한 파일 수정은 하지 않는다. 검증·화면 증거·독립 검토 기록은 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)다. [PR #22](https://github.com/wontaeJeong/agent-admission-gate/pull/22)로 병합했다. previous_review_id는 C3에서 추가한다.
 
 ## C3 수정본의 후속 검토
 
@@ -80,7 +82,7 @@ C2 구현은 ReviewActivity의 공통 전이 폼과 drafts.ts/DraftRecovery를 �
 - [x] **2. 실패 확인:** uv run pytest backend/tests/test_review_followups.py -q.
 - [x] **3. 서버 구현:** 이전 상태는 rejected/changes_requested, 새 작업은 요청자 소유·COMPLETED·같거나 이후 생성 시각이어야 한다. Git 정규 URL/ZIP 계보를 검사한다. changes_requested는 withdrawn/superseded로 닫고 새 pending/waiting을 같은 트랜잭션에서 만든다. 이전 결정·담당은 복제하지 않는다. 기존 job_id unique와 previous_review_id unique로 중복을 차단한다.
 - [x] **4. UI 연결:** '설명 보충'은 C2 respond로, '수정본 검사'는 B1의 원본 계보로 이동한다. 새 검사 완료 뒤 후속 요청을 만들며 이전/새 요청 양방향 링크와 각 content_hash를 보여준다. 중복409는 만들어진 새 요청으로 안내한다.
-- [ ] **5. PR:** SQLite/PostgreSQL 중복 생성·다른 소스·coverage 미완료 승인 차단과 review-followups E2E를 검증한다. 이전 반려/보완 대기/새 요청 이미지와 함께 feat: link rescans to follow up reviews로 커밋·PR을 만든다.
+- [x] **5. PR:** SQLite/PostgreSQL 중복 생성·다른 소스·coverage 미완료 승인 차단과 review-followups E2E를 검증한다. 이전 반려/보완 대기/새 요청 이미지와 함께 feat: link rescans to follow up reviews로 커밋·PR을 만든다.
 
 **완료:** F10 전체. 기존 작업·검토 기록은 삭제하지 않는다.
 
@@ -89,4 +91,6 @@ C3 구현 기록: previous_review_id nullable unique와 기존 job_id unique를 
 
 알림 결정: 보완 대기 대체는 이전 담당자에게 기존 review.withdrawn 업데이트와 새 자격 검토자에게 review.requested를 함께 전달한다. 두 전달의 수신자 합집합을 한 번 정렬한 뒤 이벤트별 preference/현재 권한/자기 수신 제외를 적용한다. 같은 검토자가 서로 다른 두 업무 알림을 받는 것은 의도된 동작이며 같은 이벤트만 중복 제거한다. 반려 원본에는 가상의 철회 알림을 만들지 않는다.
 
-UI는 B1의 기존 from/mode 재검사 경로와 원본 계보를 사용한다. 새 검사에서 원본 검토를 조회하여 후속 요청을 만들고, 양방향 요청 링크·각 content_hash를 표시한다. C2의 공통 폼과 강한 제출 receipt, 403 전체 초안 flush, 권위 있는409 읽기 전용 보존 및 GET 한 번의 불명확한 저장 확인을 재사용한다. 링크 ID와 해시는 권한을 함께 검사한다. 검증 및 화면 증거는 task-8-report에 기록하며 C3 PR·독립 검토·병합은 컨트롤러가 처리한다.
+UI는 B1의 기존 from/mode 재검사 경로와 원본 계보를 사용한다. 새 검사에서 원본 검토를 조회하여 후속 요청을 만들고, 양방향 요청 링크·각 content_hash를 표시한다. C2의 공통 폼과 강한 제출 receipt, 403 전체 초안 flush, 권위 있는409 읽기 전용 보존 및 GET 한 번의 불명확한 저장 확인을 재사용한다. 링크 ID와 해시는 권한을 함께 검사한다. 검증 및 화면 증거는 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)에 기록하며 C3는 독립 검토와 CI 44038309050 성공 후 PR #23으로 병합됐다.
+
+C1의 closed_reason은 C2, previous_review_id는 C3의 선형 migration에서 실제 사용 전에 추가했다. C1은 기존 Scans의 검토 상세 링크를 재사용하고 담당 업무는 Reviews/ReviewActivity에서 제공했다. page/page_size와 제약된 after cursor를 함께 유지하는 비용은 전달 기록 판단 10–12를 따른다. C1 두 번 확인 Minor는 C2에서 해결됐으며 C3 생성 DTO 손상 복구는 최종 I1 회귀로 보완한다.
