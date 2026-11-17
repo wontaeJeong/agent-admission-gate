@@ -2134,3 +2134,11 @@ tbody tr:hover {
     width: 100%;
   }
 }
+
+.scan-history > .filters {
+  padding: 0 22px;
+}
+.scan-history > .toolbar {
+  padding: 0 22px 18px;
+  overflow-wrap: anywhere;
+}

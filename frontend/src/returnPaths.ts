@@ -63,12 +63,32 @@ export function normalizeReturnTo(value: string | null | undefined): string {
     if (!route) return "/";
     const parsed = new URL(value, "https://return.example.test");
     const query = new URLSearchParams();
+    const history =
+      /^\/jobs\/[A-Za-z0-9_-]+$/.test(path) &&
+      parsed.searchParams.getAll("tab").length === 1 &&
+      parsed.searchParams.get("tab") === "history";
     for (const [key, val] of parsed.searchParams) {
-      if (route[1].includes(key) && val) query.append(key, val);
+      if (
+        (route[1].includes(key) || (history && historyFilter(key, val))) &&
+        val
+      )
+        query.append(key, val);
     }
     const target = path + (query.size ? "?" + query.toString() : "");
     return target.length <= 2048 ? target : "/";
   } catch {
     return "/";
   }
+}
+
+function historyFilter(key: string, value: string): boolean {
+  if (key === "ref") return value.length <= 200;
+  if (key === "profile") return ["static", "full"].includes(value);
+  if (key === "status")
+    return ["PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"].includes(
+      value,
+    );
+  if (["page", "page_size"].includes(key) && /^[1-9][0-9]{0,8}$/.test(value))
+    return key === "page" || Number(value) <= 100;
+  return false;
 }

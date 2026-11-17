@@ -65,6 +65,9 @@ const JobDetail = lazy(() =>
 const ScanSummary = lazy(() =>
   import("./pages/ScanSummary").then((m) => ({ default: m.ScanSummary })),
 );
+const SelectedScans = lazy(() =>
+  import("./pages/ScanHistory").then((m) => ({ default: m.SelectedScans })),
+);
 const Reviews = lazy(() =>
   import("./pages/Reviews").then((m) => ({ default: m.Reviews })),
 );
@@ -536,6 +539,7 @@ export default function App() {
                   <Route path="/jobs" element={<Jobs />} />
                   <Route path="/jobs/:id" element={<JobDetail />} />
                   <Route path="/jobs/:id/summary" element={<ScanSummary />} />
+                  <Route path="/jobs/:id/compare" element={<SelectedScans />} />
                   <Route path="/reviews" element={<Reviews />} />
                   <Route path="/reviews/:id" element={<ReviewDetail />} />
                   <Route path="/api-keys" element={<Keys />} />
