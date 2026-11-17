@@ -165,9 +165,35 @@ export function useListContext(
       window.removeEventListener("scroll", remember);
     };
   }, [data, page, location, type, user.id, resource, params, setParams]);
+  // Call immediately before query navigation: a queued scroll event can arrive
+  // only after the outgoing list has collapsed and lost its actual position.
+  return function rememberPosition() {
+    const url = location.pathname + location.search;
+    const last = data
+      ? Math.max(1, Math.ceil(data.total / (data.page_size || 25)))
+      : 0;
+    if (
+      !data ||
+      !Number.isInteger(page) ||
+      page < 1 ||
+      page > last ||
+      sessionCoordinator.capture().accountId !== user.id ||
+      window.location.pathname + window.location.search !== url
+    )
+      return;
+    const entryId = currentListEntryId();
+    rememberList(user.id, resource, url, window.scrollY);
+    rememberListEntry(user.id, resource, entryId, url, window.scrollY);
+  };
 }
 
-export function SavedViews({ resource }: { resource: ListResource }) {
+export function SavedViews({
+  resource,
+  beforeNavigate,
+}: {
+  resource: ListResource;
+  beforeNavigate: () => void;
+}) {
   const { user } = useApp(),
     t = useText(),
     send = useAccountMutation(),
@@ -404,6 +430,7 @@ export function SavedViews({ resource }: { resource: ListResource }) {
                     setNotice("");
                     const query = filtersToSearch(view.filters);
                     if (!query.size) query.set("page", "1");
+                    beforeNavigate();
                     setParams(query);
                   }}
                 >

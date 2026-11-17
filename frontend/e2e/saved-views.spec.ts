@@ -760,3 +760,67 @@ test("I2 cross-document Back without BFCache preserves the original queryless li
   await page.reload();
   await expect(page).toHaveURL(/verdict=BLOCK/);
 });
+
+for (const action of ["pagination", "saved view"] as const) {
+  test(`I1 immediate ${action} click captures outgoing scroll before its queued event`, async ({
+    page,
+  }) => {
+    await login(page);
+    if (action === "saved view")
+      await create(
+        page,
+        "Click target",
+        { version: 1, scope: "personal", verdict: "ALLOW" } as {
+          version: number;
+          scope: string;
+        },
+        false,
+      );
+    const job = await (
+      await page.request.get(provider.origin + "/api/scans/a1-synthetic-job")
+    ).json();
+    await page.route("**/api/scans?**", (route) => {
+      const broad =
+        new URL(route.request().url()).searchParams.get("page") === "3";
+      return route.fulfill({
+        json: {
+          total: 100,
+          page_size: 25,
+          items: broad
+            ? Array.from({ length: 25 }, (_, i) => ({
+                ...job,
+                id: `click-${i}`,
+                source: `click-source-${i}.zip`,
+              }))
+            : [{ ...job, source: "click-short-result.zip" }],
+        },
+      });
+    });
+    const path = "/jobs?scope=personal&verdict=BLOCK&page=3";
+    await page.goto(provider.origin + path);
+    await expect(
+      page.getByText("click-source-17.zip", { exact: true }),
+    ).toBeVisible();
+    const button = page.getByRole("button", {
+      name: action === "pagination" ? "Next" : "Apply · Click target",
+      exact: true,
+    });
+    await expect(button).toBeEnabled();
+    // One browser task preserves the race: actual scroll changed, event still queued.
+    await button.evaluate((element: HTMLButtonElement) => {
+      window.scrollTo(0, 900);
+      element.click();
+    });
+    await expect(
+      page.getByText("click-short-result.zip", { exact: true }),
+    ).toBeVisible();
+    await page.goBack();
+    await expect(
+      page.getByText("click-source-17.zip", { exact: true }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(provider.origin + path);
+    await expect
+      .poll(() => page.evaluate(() => window.scrollY))
+      .toBeGreaterThan(840);
+  });
+}

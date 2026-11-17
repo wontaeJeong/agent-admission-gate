@@ -12,6 +12,8 @@
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
+  --summary-print-ink: #222636;
+  --summary-print-canvas: #ffffff;
   --color-canvas: #0d1018;
   --color-raised: #171b26;
   --color-surface: #1e2432;
@@ -2039,5 +2041,96 @@ tbody tr:hover {
   }
   .key-card header {
     flex-wrap: wrap;
+  }
+}
+
+.finding-filters {
+  flex-wrap: wrap;
+}
+.finding-filters input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.detail-tools {
+  position: relative;
+}
+.detail-tools > summary {
+  cursor: pointer;
+  padding: 8px;
+}
+.detail-tools > .toolbar {
+  position: absolute;
+  right: 0;
+  z-index: 5;
+  width: min(340px, calc(100vw - 48px));
+  padding: 16px;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-raised);
+}
+.detail-tools .toolbar > p {
+  width: 100%;
+}
+.scan-summary {
+  padding: 24px;
+  overflow-wrap: anywhere;
+}
+.scan-summary .markdown {
+  max-width: 80ch;
+  margin: auto;
+}
+.summary-tools {
+  margin-bottom: 16px;
+}
+@media print {
+  html:has(.scan-summary),
+  html:has(.scan-summary) body {
+    background: var(--summary-print-canvas);
+    color: var(--summary-print-ink);
+  }
+  body:has(.scan-summary) .sidebar,
+  body:has(.scan-summary) .topbar,
+  body:has(.scan-summary) .summary-tools,
+  body:has(.scan-summary) .skip-link {
+    display: none !important;
+  }
+  body:has(.scan-summary) .workspace {
+    margin: 0;
+    width: 100%;
+  }
+  body:has(.scan-summary) main {
+    max-width: none;
+    padding: 0;
+  }
+  .scan-summary {
+    border: 0;
+    background: var(--summary-print-canvas);
+    color: var(--summary-print-ink);
+    padding: 0;
+    box-shadow: none;
+  }
+  .scan-summary .markdown {
+    max-width: none;
+  }
+  .scan-summary li {
+    break-inside: avoid;
+  }
+  .scan-summary a {
+    color: var(--summary-print-ink);
+    text-decoration: underline;
+  }
+  .scan-summary .markdown :not(pre) > code {
+    background: transparent;
+    color: var(--summary-print-ink);
+  }
+}
+
+@media (max-width: 800px) {
+  .detail-tools[open] {
+    width: 100%;
+  }
+  .detail-tools > .toolbar {
+    position: static;
+    width: 100%;
   }
 }

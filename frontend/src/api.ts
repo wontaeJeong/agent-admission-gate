@@ -23,6 +23,7 @@ export function requestRecovery(error: unknown, method: string) {
 export async function api<T = any>(
   path: string,
   init: RequestInit = {},
+  responseType: "json" | "text" = "json",
 ): Promise<T> {
   const capture = sessionCoordinator.capture();
   const response = await fetch("/api" + path, {
@@ -35,7 +36,10 @@ export async function api<T = any>(
       ...init.headers,
     },
   });
-  const data = await response.json().catch(() => ({}));
+  const data =
+    response.ok && responseType === "text"
+      ? await response.text()
+      : await response.json().catch(() => ({}));
   if (!sessionCoordinator.isCurrent(capture))
     throw new APIError(
       409,

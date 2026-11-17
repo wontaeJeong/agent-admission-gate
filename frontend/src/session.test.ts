@@ -159,3 +159,40 @@ it.each([
     ).toEqual({ status, retryable });
   },
 );
+
+it("reads Markdown with the same expiry and late-account guards as JSON", async () => {
+  sessionCoordinator.setAccount("alice");
+  vi.stubGlobal(
+    "fetch",
+    async () => new Response("# Safe summary", { status: 200 }),
+  );
+  expect(await api<string>("/scans/job/summary", {}, "text")).toBe(
+    "# Safe summary",
+  );
+  let count = 0;
+  const unsubscribe = sessionCoordinator.subscribe(() => {
+    count++;
+  });
+  vi.stubGlobal(
+    "fetch",
+    async () => new Response('{"detail":"Expired"}', { status: 401 }),
+  );
+  await expect(
+    api<string>("/scans/job/summary", {}, "text"),
+  ).rejects.toMatchObject({ status: 401 });
+  expect(count).toBe(1);
+  sessionCoordinator.setAccount("alice");
+  let finish!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const old = api<string>("/scans/job/summary", {}, "text");
+  sessionCoordinator.setAccount("bob");
+  finish(new Response("# Alice summary"));
+  await expect(old).rejects.toMatchObject({ status: 409 });
+  unsubscribe();
+});
