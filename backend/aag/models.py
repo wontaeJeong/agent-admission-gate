@@ -109,13 +109,20 @@ class Job(Base):
     content_hash: Mapped[str | None] = mapped_column(String(64), index=True)
     cache_key: Mapped[str | None] = mapped_column(String(64), index=True)
     cached_from: Mapped[str | None] = mapped_column(String(64))
+    origin_job_id: Mapped[str | None] = mapped_column(String(64))
+    lineage_root_id: Mapped[str | None] = mapped_column(String(64))
+    target_commit: Mapped[str | None] = mapped_column(String(64))
+    rerun_mode: Mapped[str | None] = mapped_column(String(20))
     resolved_commit: Mapped[str | None] = mapped_column(String(64))
     result: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[float] = mapped_column(Float, default=time.time, index=True)
     started_at: Mapped[float | None] = mapped_column(Float)
     completed_at: Mapped[float | None] = mapped_column(Float)
-    __table_args__ = (Index("ix_jobs_owner_created", "owner_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_jobs_owner_created", "owner_id", "created_at"),
+        Index("ix_jobs_owner_root_created", "owner_id", "lineage_root_id", "created_at"),
+    )
 
 
 class Review(Base):

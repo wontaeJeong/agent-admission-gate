@@ -114,6 +114,10 @@ export type Job = {
   created_at: number;
   started_at: number | null;
   completed_at: number | null;
+  origin_job_id: string | null;
+  lineage_root_id: string | null;
+  target_commit: string | null;
+  rerun_mode: "latest" | "snapshot" | null;
   resolved_commit: string | null;
   content_hash: string | null;
   cached_from: string | null;

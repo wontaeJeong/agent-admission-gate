@@ -1,3 +1,4 @@
+import { rerunFields, snapshotCommit, type RerunMode } from "./scanRerun";
 import { useDraft } from "../useDraft";
 import { DraftRecovery } from "../DraftRecovery";
 import { useDirtyForms } from "../DirtyForms";
@@ -8,7 +9,7 @@ import {
   ListBackLink,
   useListContext,
 } from "../SavedViews";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Link,
   useNavigate,
@@ -261,56 +262,154 @@ export function Jobs() {
   );
 }
 export function NewScan() {
+  const [params] = useSearchParams();
+  const from = params.get("from");
+  const mode = params.get("mode") || "latest";
+  if (!from) return <NewScanForm key="new" />;
+  return <RerunScan key={`${from}:${mode}`} from={from} mode={mode} />;
+}
+function RerunScan({ from, mode }: { from: string; mode: string }) {
+  const load = useLoad(`/scans/${encodeURIComponent(from)}`);
+  const { user } = useApp();
+  const t = useText();
+  const job = load.data as Job | null;
+  const available = job && job.owner_id === user.id;
+  return (
+    <State
+      {...load}
+      preserveContent={!!available && (!load.error || load.retryable)}
+    >
+      {job &&
+        (!available ? (
+          <ErrorMessage
+            value={t(
+              "본인 검사만 재검사할 수 있습니다.",
+              "Only your own scan can be reused.",
+            )}
+          />
+        ) : !["latest", "snapshot"].includes(mode) ? (
+          <ErrorMessage
+            value={t(
+              "지원하지 않는 재검사 방식입니다.",
+              "Unsupported rerun mode.",
+            )}
+          />
+        ) : mode === "snapshot" &&
+          (job.source_type !== "git" || !snapshotCommit(job)) ? (
+          <ErrorMessage
+            value={t(
+              "이 검사에 기록된 커밋이 없습니다.",
+              "No recorded commit is available for this scan.",
+            )}
+          />
+        ) : (
+          <NewScanForm
+            origin={job}
+            mode={mode as RerunMode}
+            writable={!load.error || load.retryable}
+          />
+        ))}
+    </State>
+  );
+}
+function NewScanForm({
+  origin,
+  mode = "latest",
+  writable = true,
+}: {
+  origin?: Job;
+  mode?: RerunMode;
+  writable?: boolean;
+}) {
   const send = useAccountMutation();
   const t = useText(),
     navigate = useNavigate();
+  const [linked, setLinked] = useState(!!origin);
+  const [snapshot] = useState(() =>
+    origin && mode === "snapshot" ? snapshotCommit(origin) : null,
+  );
   const draft = useDraft({
     kind: "scan_new",
     targetId: "new",
     enabled: true,
-    initialFields: {
-      type: "git",
-      url: "",
-      ref: "",
-      profile: "static",
-      force: false,
-    },
+    writable,
+    initialFields: rerunFields(origin),
   });
   const { confirmLeave } = useDirtyForms();
   const type = String(draft.fields.type);
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const [uncertain, setUncertain] = useState(false);
+  const [checked, setChecked] = useState<Job[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  const receipt = useRef<ReturnType<typeof draft.beginSubmission> | null>(null);
+  async function checkLatest() {
+    if (!receipt.current || checking) return;
+    const submitted = receipt.current;
+    setChecking(true);
+    try {
+      const response = await api<{ items: Job[] }>(
+        "/scans?mine=true&page_size=25",
+      );
+      if (!draft.isCurrentSubmission(submitted)) return;
+      setChecked(response.items);
+      setUncertain(false);
+    } catch (e) {
+      if (draft.isCurrentSubmission(submitted)) setError((e as Error).message);
+    } finally {
+      if (draft.isCurrentSubmission(submitted)) setChecking(false);
+    }
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (pending.current || draft.locked || uncertain) return;
+    pending.current = true;
     const submission = draft.beginSubmission();
+    receipt.current = submission;
+    const fields = submission.fields;
     const form = e.currentTarget,
       data = new FormData(form);
     setBusy(true);
     setError("");
+    setChecked(null);
     try {
       let result: Job;
-      if (type === "git") {
+      if (fields.type === "git") {
         const credential = String(data.get("credential") || "");
-        const field = form.elements.namedItem("credential") as HTMLInputElement;
-        field.value = "";
         result = await send("/scans", {
-          url: data.get("url"),
-          ref: data.get("ref") || null,
-          profile: data.get("profile"),
-          force_rescan: data.has("force"),
+          url: fields.url,
+          ref: linked && snapshot ? null : fields.ref || null,
+          profile: fields.profile,
+          force_rescan: !!fields.force,
+          ...(linked && origin
+            ? {
+                origin_job_id: origin.id,
+                rerun_mode: mode,
+                ...(snapshot ? { target_commit: snapshot } : {}),
+              }
+            : {}),
           ...(credential ? { credential } : {}),
         });
       } else {
-        data.set("force_rescan", String(data.has("force")));
-        result = await send("/scans/upload", data);
+        const upload = new FormData();
+        upload.set("file", data.get("file") as File);
+        upload.set("profile", String(fields.profile));
+        upload.set("force_rescan", String(!!fields.force));
+        if (linked && origin) upload.set("origin_job_id", origin.id);
+        result = await send("/scans/upload", upload);
       }
       if (!draft.markSubmitted(submission)) return;
       navigate("/jobs/" + result.id);
     } catch (e) {
       if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
+      setUncertain(!(e instanceof APIError) || e.status >= 500);
     } finally {
-      if (draft.isCurrentSubmission(submission)) setBusy(false);
+      if (draft.isCurrentSubmission(submission)) {
+        pending.current = false;
+        setBusy(false);
+      }
     }
   }
   return (
@@ -332,10 +431,75 @@ export function NewScan() {
             ]}
             selected={type}
             onChange={(value) => {
-              if (confirmLeave()) draft.update("type", value);
+              if (confirmLeave()) {
+                setLinked(false);
+                draft.update("type", value);
+              }
             }}
           />
-          <DraftRecovery draft={draft} />
+          {linked && origin && (
+            <section
+              className="notice"
+              aria-label={t("재검사 설정", "Rerun settings")}
+            >
+              <h2>{t("같은 조건으로 다시 검사", "Reuse scan settings")}</h2>
+              <p>
+                <ListLink resource="jobs" to={"/jobs/" + origin.id}>
+                  {t("원본 검사", "Origin scan")}
+                </ListLink>
+              </p>
+              <p>
+                {type === "upload"
+                  ? t(
+                      "ZIP 파일을 다시 선택하세요.",
+                      "Select the ZIP file again.",
+                    )
+                  : snapshot
+                    ? t("기록된 동일 커밋", "Recorded same commit")
+                    : t(
+                        "브랜치/태그의 현재 내용",
+                        "Current branch or tag content",
+                      )}
+              </p>
+              <p>
+                {t(
+                  "기존 승인과 예외를 복제하지 않습니다. 현재 내용과 정책을 다시 평가합니다.",
+                  "Approvals and exceptions are not copied. Current content and policy are evaluated again.",
+                )}
+              </p>
+              {draft.candidate && (
+                <>
+                  <p>
+                    {t(
+                      "원본 검사 설정 또는 연결 없는 새 검사로 초안 복구를 선택하세요.",
+                      "Choose original scan settings or restore the previous draft as an unlinked new scan.",
+                    )}
+                  </p>
+                  <button type="button" onClick={draft.discard}>
+                    {t("원본 검사 설정 사용", "Use original scan settings")}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setLinked(false);
+                  draft.touch();
+                }}
+              >
+                {t("원본 연결 없이 계속", "Continue without origin")}
+              </button>
+            </section>
+          )}
+          <DraftRecovery
+            draft={{
+              ...draft,
+              restore: () => {
+                setLinked(false);
+                draft.restore();
+              },
+            }}
+          />
           <p className="muted">
             {t(
               "PAT와 ZIP 파일은 임시저장하지 않습니다. 복구 후 다시 입력하거나 선택하세요.",
@@ -345,6 +509,44 @@ export function NewScan() {
           <form onSubmit={submit}>
             <fieldset disabled={draft.locked}>
               <ErrorMessage value={error} />
+              {uncertain && (
+                <section className="notice" role="status">
+                  <p>
+                    {t(
+                      "접수 여부를 확인하지 못했습니다. 최신 검사를 확인한 뒤 재제출 여부를 결정하세요.",
+                      "Submission outcome is unknown. Check latest scans before deciding whether to submit again.",
+                    )}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={checking}
+                    onClick={checkLatest}
+                  >
+                    {t("최신 검사 확인", "Check latest scans")}
+                  </button>
+                </section>
+              )}
+              {checked && (
+                <section className="notice" role="status">
+                  <p>
+                    {t(
+                      "최신 검사를 확인했습니다. 다시 제출하기 전에 목록을 검토하세요.",
+                      "Latest scans checked. Review the list before submitting again.",
+                    )}
+                  </p>
+                  {checked.map((job) => (
+                    <p key={job.id}>
+                      <ListLink resource="jobs" to={"/jobs/" + job.id}>
+                        {job.source} · {timestamp(job.created_at)} ·{" "}
+                        {job.status}
+                      </ListLink>
+                    </p>
+                  ))}
+                  <ListLink resource="jobs" to="/jobs?mine=true">
+                    {t("내 검사 전체 보기", "View all my scans")}
+                  </ListLink>
+                </section>
+              )}
               {type === "git" ? (
                 <>
                   <label>
@@ -359,18 +561,25 @@ export function NewScan() {
                       autoComplete="off"
                     />
                   </label>
-                  <label>
-                    {t("브랜치 또는 태그", "Branch or tag")}
-                    <input
-                      name="ref"
-                      value={String(draft.fields.ref)}
-                      onChange={(e) => draft.update("ref", e.target.value)}
-                      placeholder={t(
-                        "비워두면 기본 브랜치",
-                        "Default branch when empty",
-                      )}
-                    />
-                  </label>
+                  {linked && snapshot ? (
+                    <label>
+                      {t("기록된 커밋", "Recorded commit")}
+                      <input value={snapshot} readOnly className="mono" />
+                    </label>
+                  ) : (
+                    <label>
+                      {t("브랜치 또는 태그", "Branch or tag")}
+                      <input
+                        name="ref"
+                        value={String(draft.fields.ref)}
+                        onChange={(e) => draft.update("ref", e.target.value)}
+                        placeholder={t(
+                          "비워두면 기본 브랜치",
+                          "Default branch when empty",
+                        )}
+                      />
+                    </label>
+                  )}
                   <details>
                     <summary>
                       {t(
@@ -464,7 +673,15 @@ export function NewScan() {
                 />
                 {t("기존 캐시를 사용하지 않고 다시 검사", "Force a fresh scan")}
               </label>
-              <button className="primary" disabled={busy}>
+              <p className="muted">
+                {draft.fields.force
+                  ? t("캐시를 사용하지 않습니다.", "Cache will not be used.")
+                  : t(
+                      "동일 내용과 설정의 유효한 캐시를 사용할 수 있습니다.",
+                      "A valid cache for the same content and settings may be used.",
+                    )}
+              </p>
+              <button className="primary" disabled={busy || uncertain}>
                 {busy
                   ? t("접수 중…", "Submitting…")
                   : t("검사 실행", "Run scan")}
@@ -605,6 +822,44 @@ export function JobDetail() {
               }
             />
             <ErrorMessage value={error} />
+            {job.owner_id === user.id && (
+              <section className="panel">
+                <h2>{t("같은 조건으로 다시 검사", "Reuse scan settings")}</h2>
+                <div className="toolbar">
+                  <ListLink
+                    resource="jobs"
+                    to={`/new?from=${job.id}&mode=latest`}
+                  >
+                    {job.source_type === "git"
+                      ? t(
+                          "브랜치/태그의 현재 내용",
+                          "Current branch or tag content",
+                        )
+                      : t("ZIP 파일 다시 선택", "Select ZIP again")}
+                  </ListLink>
+                  {job.source_type === "git" &&
+                    (snapshotCommit(job) ? (
+                      <ListLink
+                        resource="jobs"
+                        to={`/new?from=${job.id}&mode=snapshot`}
+                      >
+                        {t("기록된 동일 커밋", "Recorded same commit")}
+                      </ListLink>
+                    ) : (
+                      <button disabled>
+                        {t("기록된 커밋 없음", "No recorded commit")}
+                      </button>
+                    ))}
+                </div>
+              </section>
+            )}
+            {job.origin_job_id && (
+              <p>
+                <ListLink resource="jobs" to={"/jobs/" + job.origin_job_id}>
+                  {t("원본 검사", "Origin scan")} ↗
+                </ListLink>
+              </p>
+            )}
             <div className="scan-strip">
               <Badge value={job.status} />
               <span>{job.profile}</span>
@@ -806,6 +1061,9 @@ export function JobDetail() {
                     Source: job.source,
                     Ref: job.ref,
                     Commit: job.resolved_commit,
+                    "Target commit": job.target_commit,
+                    "Rerun mode": job.rerun_mode,
+                    "Lineage root": job.lineage_root_id,
                     "Content SHA256": job.content_hash,
                     Profile: job.profile,
                     Policy: job.result.policy_version,

@@ -56,6 +56,7 @@ class ScanService:
         filename=None,
         upload_profile="static",
         upload_force=False,
+        upload_origin_job_id=None,
     ):
         actor.scope("scan:write")
         if len(self.tasks) >= self.settings.queue_capacity or (
@@ -70,14 +71,29 @@ class ScanService:
             except ValueError as e:
                 raise HTTPException(422, str(e)) from e
         with self.db.session.begin() as s:
+            origin_id = request.origin_job_id if request else upload_origin_job_id
+            source_type = "git" if request else "upload"
+            origin = s.get(Job, origin_id) if origin_id else None
+            if origin_id:
+                if not origin or origin.owner_id != actor.id:
+                    raise HTTPException(404, "Origin scan not found")
+                if origin.source_type != source_type:
+                    raise HTTPException(422, "Origin source type differs")
+                if request and origin.source != url:
+                    raise HTTPException(422, "Origin repository differs")
             job = Job(
                 owner_id=actor.id,
                 source=url if request else Path(filename or "upload.zip").name[:200],
-                source_type="git" if request else "upload",
+                source_type=source_type,
+                origin_job_id=origin_id,
+                target_commit=request.target_commit if request else None,
+                rerun_mode=request.rerun_mode if request else None,
                 ref=request.ref if request else None,
                 profile=request.profile if request else upload_profile,
             )
             s.add(job)
+            s.flush()
+            job.lineage_root_id = (origin.lineage_root_id or origin.id) if origin else job.id
             s.flush()
             audit(
                 s, actor.id, "scan.create", job.id, profile=job.profile, source_type=job.source_type
@@ -139,7 +155,16 @@ class ScanService:
                             revision = None
                         else:
                             root, files, revision = await clone(
-                                job.source, job.ref, credential, work, self.settings
+                                job.source,
+                                job.ref,
+                                credential,
+                                work,
+                                self.settings,
+                                **(
+                                    {"target_commit": job.target_commit}
+                                    if job.target_commit
+                                    else {}
+                                ),
                             )
                         credential, upload = None, None
                         if not files:
