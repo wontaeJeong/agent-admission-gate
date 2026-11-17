@@ -25,14 +25,15 @@ const job = {
 async function fixture(page: Page) {
   let account = "reviewer",
     qualified = true,
-    status = "pending";
+    status = "pending",
+    role = "user";
   await page.addInitScript(() => localStorage.setItem("aag-lang", "en"));
   await page.route("**/api/auth/config", (r) =>
     r.fulfill({ json: { mode: "local", boards_enabled: true } }),
   );
   await page.route("**/api/auth/me", (r) =>
     r.fulfill({
-      json: { id: account, name: account, role: "user", reviewer: qualified },
+      json: { id: account, name: account, role, reviewer: qualified },
     }),
   );
   await page.route("**/api/profile", (r) =>
@@ -40,7 +41,7 @@ async function fixture(page: Page) {
       json: {
         account_name: account,
         display_name: null,
-        role: "user",
+        role,
         reviewer: qualified,
       },
     }),
@@ -74,6 +75,10 @@ async function fixture(page: Page) {
     r.fulfill({ json: [] }),
   );
   return {
+    setRole(value: string, reviewer: boolean) {
+      role = value;
+      qualified = reviewer;
+    },
     setAccount(value: string) {
       account = value;
     },
@@ -116,6 +121,11 @@ async function capture(page: Page, name: string) {
     "../../docs/engineering/screenshots/convenience-a2",
   );
   mkdirSync(directory, { recursive: true });
+  // Full-page Chromium captures otherwise offset fixed chrome after focus scroll.
+  // Scrolling does not blur the active form; the preservation assertions still run.
+  await page.evaluate(() =>
+    window.scrollTo({ top: 0, left: 0, behavior: "instant" }),
+  );
   await page.screenshot({
     path: resolve(directory, name + ".png"),
     fullPage: true,
@@ -941,3 +951,520 @@ test("qualification loss removes internal drafts even when the target becomes un
     ),
   ).toEqual([]);
 });
+
+async function rejectDraftWrites(page: Page) {
+  await page.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith("aag-draft:"))
+        throw new DOMException(
+          "Synthetic unavailable draft storage",
+          "QuotaExceededError",
+        );
+      return setItem.call(this, key, value);
+    };
+  });
+}
+const reviewPost = (kind = "voc") => ({
+  id: "review-post",
+  author_id: "reviewer",
+  author: "Synthetic author",
+  kind,
+  title: "Synthetic post",
+  body: "Server body",
+  visibility: "public",
+  status: "open",
+  pinned: false,
+  revision: 1,
+  updated_at: 1760000000,
+});
+for (const form of ["board", "comment"] as const) {
+  for (const failure of [500, 503, "network"] as const) {
+    test(`review_I1 ${form} input and focus survive ${failure} polling with unavailable storage`, async ({
+      page,
+    }) => {
+      await fixture(page);
+      await rejectDraftWrites(page);
+      let fail = false,
+        denied = false;
+      const path =
+        form === "board" ? "/boards/review-post" : "/reviews/draft-review";
+      const endpoint =
+        form === "board"
+          ? "**/api/boards/review-post"
+          : "**/api/reviews/draft-review";
+      if (form === "board")
+        await page.route("**/api/boards/review-post/comments", (r) =>
+          r.fulfill({ json: [] }),
+        );
+      await page.route(endpoint, (route) => {
+        if (denied)
+          return route.fulfill({
+            status: 403,
+            json: { detail: "Synthetic permission removed" },
+          });
+        if (fail)
+          return failure === "network"
+            ? route.abort("failed")
+            : route.fulfill({
+                status: failure,
+                json: { detail: "Synthetic poll unavailable" },
+              });
+        if (form === "board") return route.fulfill({ json: reviewPost() });
+        return route.fallback();
+      });
+      await page.goto(path);
+      if (form === "board")
+        await page.getByRole("button", { name: "Edit", exact: true }).click();
+      const field = page.getByLabel(form === "board" ? "Body" : "Comment", {
+        exact: true,
+      });
+      await field.fill("Input must survive a transient read without storage");
+      await expect(
+        page.getByRole("alert").filter({ hasText: "Draft was not saved" }),
+      ).toBeVisible();
+      await field.evaluate((node) =>
+        node.setAttribute("data-form-instance", "original"),
+      );
+      fail = true;
+      await expect(
+        page.getByRole("alert").filter({
+          hasText:
+            failure === "network"
+              ? "Failed to fetch"
+              : "Synthetic poll unavailable",
+        }),
+      ).toBeVisible({ timeout: 7000 });
+      await expect(field).toHaveAttribute("data-form-instance", "original");
+      await expect(field).toHaveValue(
+        "Input must survive a transient read without storage",
+      );
+      await expect(field).toBeFocused();
+      await expect(
+        page.getByRole("button", { name: "Retry", exact: true }),
+      ).toBeVisible();
+      if (failure === 503) {
+        await capture(page, `poll-error-${form}-desktop-dark`);
+        await mobile(page);
+        await capture(page, `poll-error-${form}-mobile-dark`);
+      }
+      fail = false;
+      await expect(
+        page.getByRole("alert").filter({
+          hasText:
+            failure === "network"
+              ? "Failed to fetch"
+              : "Synthetic poll unavailable",
+        }),
+      ).toHaveCount(0, { timeout: 7000 });
+      await expect(field).toHaveAttribute("data-form-instance", "original");
+      await expect(field).toHaveValue(
+        "Input must survive a transient read without storage",
+      );
+      await expect(field).toBeFocused();
+      denied = true;
+      await expect(
+        page
+          .getByRole("alert")
+          .filter({ hasText: "Synthetic permission removed" }),
+      ).toBeVisible({ timeout: 7000 });
+      await expect(field).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Retry", exact: true }),
+      ).toHaveCount(0);
+    });
+  }
+}
+for (const reviewer of [false, true]) {
+  test(`review_I2 a demoted notice author cannot edit or recover writable drafts (reviewer=${reviewer})`, async ({
+    page,
+  }) => {
+    const state = await fixture(page);
+    state.setRole("admin", true);
+    await page.route("**/api/boards/review-post", (r) =>
+      r.fulfill({ json: reviewPost("notice") }),
+    );
+    await page.route("**/api/boards/review-post/comments", (r) =>
+      r.fulfill({ json: [] }),
+    );
+    await page.goto("/boards/review-post");
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page
+      .getByLabel("Body", { exact: true })
+      .fill("Earlier administrator notice draft");
+    await expect(
+      page.getByText("Saved in this tab", { exact: false }),
+    ).toBeVisible();
+    state.setRole("user", reviewer);
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "aag-auth-change" }),
+      ),
+    );
+    await expect(page.locator(".sidebar-footer")).toContainText(
+      reviewer ? "user · reviewer" : "user",
+    );
+    await expect(
+      page.getByRole("heading", { name: "Synthetic post", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Edit", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Restore previous draft" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Re-edit draft against latest" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Save", exact: true }),
+    ).toHaveCount(0);
+    if (reviewer) {
+      await capture(page, "notice-permission-desktop-dark");
+      await mobile(page);
+      await capture(page, "notice-permission-mobile-dark");
+    }
+  });
+}
+for (const reopen of [true, false]) {
+  test(`review_I3 a late comment success preserves the newer ${reopen ? "replacement" : "same-instance"} draft`, async ({
+    page,
+  }) => {
+    await fixture(page);
+    let release!: () => void;
+    let submitted = false;
+    const hold = new Promise<void>((done) => {
+      release = done;
+    });
+    await page.route("**/api/scans/draft-job/comments", async (route) => {
+      if (route.request().method() !== "POST")
+        return route.fulfill({ json: [] });
+      submitted = true;
+      await hold;
+      await route.fulfill({ status: 201, json: { id: "old-comment" } });
+    });
+    await page.goto("/reviews/draft-review");
+    await page
+      .getByLabel("Comment", { exact: true })
+      .fill("Old comment submission");
+    await page.getByRole("button", { name: "Post comment" }).click();
+    await expect.poll(() => submitted).toBe(true);
+    if (reopen) {
+      await leave(page, true);
+      await expect(
+        page.getByRole("heading", { name: "Scans", exact: true }),
+      ).toBeVisible();
+      await page.goBack();
+      await page
+        .getByRole("button", { name: "Restore previous draft" })
+        .click();
+    }
+    await page
+      .getByLabel("Comment", { exact: true })
+      .fill("Newer comment draft");
+    await expect(
+      page.getByText("Saved in this tab", { exact: false }),
+    ).toBeVisible();
+    const completed = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/api/scans/draft-job/comments") &&
+        r.request().method() === "POST",
+    );
+    release();
+    await (await completed).finished();
+    await page.evaluate(
+      () =>
+        new Promise<void>((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => done())),
+        ),
+    );
+    await page.evaluate(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    await expect(page.getByLabel("Comment", { exact: true })).toHaveValue(
+      "Newer comment draft",
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          Object.entries(sessionStorage)
+            .filter(([key]) => key.startsWith("aag-draft:"))
+            .map(([, raw]) => JSON.parse(raw))
+            .find((d) => d.kind === "scan_comment")?.fields.body,
+      ),
+    ).toBe("Newer comment draft");
+  });
+}
+test("review_I3 an old scan success cannot navigate away or delete a replacement scan draft", async ({
+  page,
+}) => {
+  await fixture(page);
+  let release!: () => void;
+  let submitted = false;
+  const hold = new Promise<void>((done) => {
+    release = done;
+  });
+  await page.route("**/api/scans", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    submitted = true;
+    await hold;
+    await route.fulfill({
+      status: 202,
+      json: { ...job, id: "old-created-job" },
+    });
+  });
+  await page.goto("/new");
+  await page
+    .getByLabel("Repository URL", { exact: true })
+    .fill("https://example.test/old-submitted");
+  await page.getByRole("button", { name: "Run scan", exact: true }).click();
+  await expect.poll(() => submitted).toBe(true);
+  await leave(page, true);
+  await expect(
+    page.getByRole("heading", { name: "Scans", exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await page.getByRole("button", { name: "Restore previous draft" }).click();
+  await page
+    .getByLabel("Repository URL", { exact: true })
+    .fill("https://example.test/newer-draft");
+  await expect(
+    page.getByText("Saved in this tab", { exact: false }),
+  ).toBeVisible();
+  let unwantedDialogs = 0;
+  const acceptUnexpected = async (
+    dialog: import("@playwright/test").Dialog,
+  ) => {
+    unwantedDialogs++;
+    await dialog.accept();
+  };
+  page.on("dialog", acceptUnexpected);
+  const completed = page.waitForResponse(
+    (r) => r.url().endsWith("/api/scans") && r.request().method() === "POST",
+  );
+  release();
+  await (await completed).finished();
+  await page.evaluate(
+    () =>
+      new Promise<void>((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => done())),
+      ),
+  );
+  expect(unwantedDialogs).toBe(0);
+  await expect(page).toHaveURL(/\/new$/);
+  await expect(page.getByLabel("Repository URL", { exact: true })).toHaveValue(
+    "https://example.test/newer-draft",
+  );
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  expect(
+    await page.evaluate(
+      () =>
+        Object.entries(sessionStorage)
+          .filter(([key]) => key.startsWith("aag-draft:"))
+          .map(([, raw]) => JSON.parse(raw))
+          .find((d) => d.kind === "scan_new")?.fields.url,
+    ),
+  ).toBe("https://example.test/newer-draft");
+  page.off("dialog", acceptUnexpected);
+});
+
+test("review_I1 explicit retry retains a cached editor until the replacement read succeeds", async ({
+  page,
+}) => {
+  await fixture(page);
+  await rejectDraftWrites(page);
+  let failure = false,
+    retryPending = false;
+  let release!: () => void;
+  const held = new Promise<void>((done) => {
+    release = done;
+  });
+  await page.route("**/api/boards/review-post", async (route) => {
+    if (retryPending) await held;
+    if (failure)
+      return route.fulfill({
+        status: 503,
+        json: { detail: "Synthetic retryable read" },
+      });
+    return route.fulfill({ json: reviewPost() });
+  });
+  await page.route("**/api/boards/review-post/comments", (r) =>
+    r.fulfill({ json: [] }),
+  );
+  await page.goto("/boards/review-post");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const body = page.getByLabel("Body", { exact: true });
+  await body.fill("Unstored input during explicit retry");
+  await body.evaluate((node) =>
+    node.setAttribute("data-form-instance", "retry-original"),
+  );
+  failure = true;
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Synthetic retryable read" }),
+  ).toBeVisible({ timeout: 7000 });
+  failure = false;
+  retryPending = true;
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(body).toHaveAttribute("data-form-instance", "retry-original");
+  await expect(body).toHaveValue("Unstored input during explicit retry");
+  release();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Synthetic retryable read" }),
+  ).toHaveCount(0);
+  await expect(body).toHaveAttribute("data-form-instance", "retry-original");
+  await expect(body).toHaveValue("Unstored input during explicit retry");
+});
+
+test("review_I1 a conflicting review request stays read-only when its refresh fails", async ({
+  page,
+}) => {
+  await fixture(page);
+  await rejectDraftWrites(page);
+  let conflict = false;
+  await page.route("**/api/scans/draft-job", (route) =>
+    conflict
+      ? route.fulfill({
+          status: 503,
+          json: { detail: "Latest review status unavailable" },
+        })
+      : route.fulfill({ json: { ...job, owner_id: "reviewer" } }),
+  );
+  await page.route("**/api/scans/draft-job/review", (route) => {
+    conflict = true;
+    return route.fulfill({
+      status: 409,
+      json: { detail: "Review already exists" },
+    });
+  });
+  await page.goto("/jobs/draft-job");
+  await page
+    .getByLabel("Reason", { exact: true })
+    .fill("Unstored reason must remain readable after conflict");
+  await page
+    .getByRole("button", { name: "Request review", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Latest review status unavailable" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Request review", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByLabel("Read-only draft")).toContainText(
+    "Unstored reason must remain readable after conflict",
+  );
+});
+
+for (const recovery of ["re-edit", "discard"] as const) {
+  test(`review_I1 board revision conflicts stay blocked through failed/stale reads and reopen (${recovery})`, async ({
+    page,
+  }) => {
+    await fixture(page);
+    let conflict = false,
+      allowRead = false,
+      observedRevision = 1;
+    const submittedRevisions: number[] = [];
+    await page.route("**/api/boards/review-post", (route) => {
+      if (route.request().method() === "PUT") {
+        submittedRevisions.push(route.request().postDataJSON().revision);
+        if (submittedRevisions.length === 1) {
+          conflict = true;
+          return route.fulfill({
+            status: 409,
+            json: { detail: "Post changed; reload before editing" },
+          });
+        }
+        return route.fulfill({ json: { ok: true } });
+      }
+      if (conflict && !allowRead)
+        return route.fulfill({
+          status: 503,
+          json: { detail: "Latest post revision unavailable" },
+        });
+      return route.fulfill({
+        json: {
+          ...reviewPost(),
+          revision: observedRevision,
+          body: conflict
+            ? observedRevision === 1
+              ? "Stale server revision one"
+              : "Server revision two"
+            : "Server body",
+        },
+      });
+    });
+    await page.route("**/api/boards/review-post/comments", (r) =>
+      r.fulfill({ json: [] }),
+    );
+    await page.goto("/boards/review-post");
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page
+      .getByLabel("Body", { exact: true })
+      .fill("User edit against revision one");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(
+      page
+        .getByRole("alert")
+        .filter({ hasText: "Latest post revision unavailable" }),
+    ).toBeVisible({ timeout: 7000 });
+    await expect(
+      page.getByRole("button", { name: "Save", exact: true }),
+    ).toBeDisabled();
+    await expect(page.getByLabel("Read-only draft")).toContainText(
+      "User edit against revision one",
+    );
+    await expect(
+      page.getByRole("button", { name: "Re-edit draft against latest" }),
+    ).toHaveCount(0);
+    await withConfirm(page, true, () =>
+      page.getByRole("button", { name: "Edit", exact: true }).click(),
+    );
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Save", exact: true }),
+    ).toBeDisabled();
+    const latest = page
+      .locator("details")
+      .filter({ hasText: "Latest server content" });
+    allowRead = true;
+    await expect(latest).toContainText("Stale server revision one", {
+      timeout: 7000,
+    });
+    await expect(
+      page.getByRole("button", { name: "Re-edit draft against latest" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Save", exact: true }),
+    ).toBeDisabled();
+    if (recovery === "discard")
+      await page
+        .getByRole("button", { name: "Discard draft", exact: true })
+        .click();
+    observedRevision = 2;
+    if (recovery === "re-edit") {
+      await expect(
+        page.getByRole("button", { name: "Re-edit draft against latest" }),
+      ).toBeVisible({ timeout: 7000 });
+      await expect(
+        page.getByRole("button", { name: "Save", exact: true }),
+      ).toBeDisabled();
+      await page.getByText("Latest server content", { exact: true }).click();
+      await expect(latest).toContainText("Server revision two");
+      await page
+        .getByRole("button", { name: "Re-edit draft against latest" })
+        .click();
+      await expect(page.getByLabel("Body", { exact: true })).toHaveValue(
+        "User edit against revision one",
+      );
+    } else {
+      await expect(page.getByLabel("Body", { exact: true })).toHaveValue(
+        "Server revision two",
+        { timeout: 7000 },
+      );
+    }
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect.poll(() => submittedRevisions).toEqual([1, 2]);
+  });
+}

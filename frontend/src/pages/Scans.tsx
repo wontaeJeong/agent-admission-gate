@@ -247,6 +247,7 @@ export function NewScan() {
     [busy, setBusy] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     const form = e.currentTarget,
       data = new FormData(form);
     setBusy(true);
@@ -268,12 +269,13 @@ export function NewScan() {
         data.set("force_rescan", String(data.has("force")));
         result = await send("/scans/upload", data);
       }
-      draft.markSubmitted();
+      if (!draft.markSubmitted(submission)) return;
       navigate("/jobs/" + result.id);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
@@ -475,6 +477,7 @@ export function JobDetail() {
     [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
     [reviewError, setReviewError] = useState(""),
+    [reviewConflicted, setReviewConflicted] = useState(false),
     [busy, setBusy] = useState(false),
     t = useText(),
     { user } = useApp(),
@@ -487,28 +490,34 @@ export function JobDetail() {
     targetId: id!,
     enabled:
       !!job &&
-      !load.error &&
+      (!load.error || load.retryable) &&
       job.owner_id === user.id &&
       job.review !== undefined,
-    writable: job?.status === "COMPLETED" && job?.review === null,
+    writable:
+      !reviewConflicted && job?.status === "COMPLETED" && job?.review === null,
     initialFields: { reason: "" },
     baseState: { status: job?.status, review_id: job?.review?.id ?? null },
   });
   async function requestReview(e: FormEvent) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     setBusy(true);
     setReviewError("");
     try {
       const r = await send(`/scans/${id}/review`, {
-        reason: draft.fields.reason,
+        reason: submission.fields.reason,
       });
-      draft.markSubmitted();
+      if (!draft.markSubmitted(submission)) return;
       navigate("/reviews/" + r.id);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setReviewError((e as Error).message);
-      if (e instanceof APIError && e.status === 409) setRefresh((x) => x + 1);
+      if (e instanceof APIError && e.status === 409) {
+        setReviewConflicted(true);
+        setRefresh((x) => x + 1);
+      }
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
@@ -517,7 +526,10 @@ export function JobDetail() {
         <ArrowLeft size={15} />
         {t("작업 목록", "Scans")}
       </Link>
-      <State {...load}>
+      <State
+        {...load}
+        preserveContent={!!job && (!load.error || load.retryable)}
+      >
         {job && (
           <>
             <PageTitle
@@ -620,7 +632,8 @@ export function JobDetail() {
                   )}
                 {job.owner_id === user.id &&
                   job.status === "COMPLETED" &&
-                  job.review === null && (
+                  job.review === null &&
+                  !reviewConflicted && (
                     <section className="panel form-panel">
                       <h2>{t("검토 요청", "Request review")}</h2>
                       <p>
@@ -974,31 +987,36 @@ export function Comments({ endpoint }: { endpoint: string }) {
   const draft = useDraft({
     kind: "scan_comment",
     targetId: endpoint,
-    enabled: load.data !== null && !load.error,
+    enabled: load.data !== null && (!load.error || load.retryable),
     initialFields: { body: "", internal: false },
     allowCandidate: (candidate) =>
       !candidate.fields.internal || user.role === "admin" || user.reviewer,
   });
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     setBusy(true);
     try {
       await send(endpoint, {
-        body: draft.fields.body,
-        internal: draft.fields.internal,
+        body: submission.fields.body,
+        internal: submission.fields.internal,
       });
-      draft.markSubmitted();
+      if (!draft.markSubmitted(submission)) return;
       draft.discard();
       setRefresh((x) => x + 1);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
     <section className="panel comments">
-      <State {...load}>
+      <State
+        {...load}
+        preserveContent={load.data !== null && (!load.error || load.retryable)}
+      >
         {load.data?.length ? (
           load.data.map((c: any) => (
             <article key={c.id}>
@@ -1018,7 +1036,11 @@ export function Comments({ endpoint }: { endpoint: string }) {
       </State>
       <DraftRecovery draft={draft} />
       <form onSubmit={submit}>
-        <fieldset disabled={draft.locked || !load.data || !!load.error}>
+        <fieldset
+          disabled={
+            draft.locked || !load.data || (!!load.error && !load.retryable)
+          }
+        >
           <ErrorMessage value={error} />
           <label>
             {t("코멘트", "Comment")}

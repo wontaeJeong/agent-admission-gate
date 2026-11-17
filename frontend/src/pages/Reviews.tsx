@@ -135,7 +135,8 @@ export function ReviewDetail() {
   const draft = useDraft({
     kind: "review_decision",
     targetId: id!,
-    enabled: !!r && !load.error && r.requester_id !== user.id,
+    enabled:
+      !!r && (!load.error || load.retryable) && r.requester_id !== user.id,
     writable:
       r?.status === "pending" && user.reviewer && r?.requester_id !== user.id,
     initialFields: { decision: "rejected", reason: "" },
@@ -148,22 +149,24 @@ export function ReviewDetail() {
   });
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     setBusy(true);
     try {
       await send(`/reviews/${id}/decision`, {
-        decision: draft.fields.decision,
-        reason: draft.fields.reason,
+        decision: submission.fields.decision,
+        reason: submission.fields.reason,
       });
-      draft.markSubmitted();
+      if (!draft.markSubmitted(submission)) return;
       setRefresh((x) => x + 1);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
-    <State {...load}>
+    <State {...load} preserveContent={!!r && (!load.error || load.retryable)}>
       {r && (
         <>
           <PageTitle

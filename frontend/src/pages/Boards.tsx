@@ -9,7 +9,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { timestamp } from "../api";
+import { APIError, timestamp } from "../api";
 import {
   Badge,
   Empty,
@@ -140,6 +140,9 @@ export function PostDetail() {
   const { id } = useParams(),
     [refresh, setRefresh] = useState(0),
     [edit, setEdit] = useState(false),
+    [conflictSnapshot, setConflictSnapshot] = useState<{
+      revision: number | null;
+    } | null>(null),
     load = useLoad("/boards/" + id, refresh, 4000),
     { user } = useApp(),
     t = useText(),
@@ -147,13 +150,19 @@ export function PostDetail() {
     [error, setError] = useState(""),
     [read, setRead] = useState(false);
   const { confirmLeave } = useDirtyForms();
+  const staff = user.role === "admin" || user.reviewer;
   const canEdit =
     post &&
-    (post.author_id === user.id ||
-      user.role === "admin" ||
-      (user.reviewer && post.kind !== "notice"));
+    (post.kind === "notice"
+      ? user.role === "admin"
+      : post.kind === "internal"
+        ? staff
+        : post.author_id === user.id || staff);
   return (
-    <State {...load}>
+    <State
+      {...load}
+      preserveContent={!!post && (!load.error || load.retryable)}
+    >
       {post && (
         <>
           <PageTitle
@@ -178,7 +187,18 @@ export function PostDetail() {
               key={post.id}
               kind={post.kind}
               original={post}
+              readVerified={
+                !conflictSnapshot ||
+                (conflictSnapshot.revision !== null &&
+                  post.revision > conflictSnapshot.revision)
+              }
+              conflictToken={conflictSnapshot}
+              onConflict={(revision) => {
+                setConflictSnapshot({ revision });
+                setRefresh((value) => value + 1);
+              }}
               onSave={() => {
+                setConflictSnapshot(null);
                 setEdit(false);
                 setRefresh((x) => x + 1);
               }}
@@ -217,10 +237,16 @@ function Editor({
   kind,
   original,
   onSave,
+  onConflict,
+  readVerified = true,
+  conflictToken,
 }: {
   kind: string;
   original?: any;
   onSave: (p: any) => void;
+  onConflict?: (rejectedRevision: number | null) => void;
+  readVerified?: boolean;
+  conflictToken?: object | null;
 }) {
   const send = useAccountMutation();
   const [preview, setPreview] = useState(false),
@@ -233,6 +259,15 @@ function Editor({
     kind: "board_post",
     targetId: original?.id ?? `new:${kind}`,
     enabled: boards,
+    conflictToken,
+    writable:
+      boards &&
+      readVerified &&
+      (kind === "notice"
+        ? user.role === "admin"
+        : kind === "internal"
+          ? staff
+          : !original || original.author_id === user.id || staff),
     initialFields: {
       title: original?.title ?? "",
       body: original?.body ?? "",
@@ -246,27 +281,31 @@ function Editor({
   const body = String(draft.fields.body);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     setBusy(true);
     try {
       const result = await send(
         original ? "/boards/" + original.id : "/boards",
         {
           kind,
-          title: draft.fields.title,
-          body,
-          visibility: draft.fields.visibility,
-          status: draft.fields.status,
-          pinned: staff ? draft.fields.pinned : Boolean(original?.pinned),
-          revision: draft.baseRevision,
+          title: submission.fields.title,
+          body: submission.fields.body,
+          visibility: submission.fields.visibility,
+          status: submission.fields.status,
+          pinned: staff ? submission.fields.pinned : Boolean(original?.pinned),
+          revision: submission.baseRevision,
         },
         original ? "PUT" : "POST",
       );
-      draft.markSubmitted();
+      if (!draft.markSubmitted(submission)) return;
       onSave(original || result);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
+      if (e instanceof APIError && e.status === 409)
+        onConflict?.(submission.baseRevision);
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (

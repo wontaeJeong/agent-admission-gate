@@ -137,8 +137,15 @@ it.each([
   },
 );
 it.each([
+  [401, "GET", false],
   [403, "GET", false],
+  [404, "GET", false],
+  [500, "GET", true],
+  [502, "GET", true],
   [503, "GET", true],
+  [504, "GET", true],
+  [500, "POST", false],
+  [504, "POST", false],
   [503, "POST", false],
 ])(
   "preserves HTTP %i and limits retry to reads (%s)",

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useApp } from "./context";
 import { useDirtyForms } from "./DirtyForms";
 import {
@@ -23,8 +30,17 @@ type Options = {
   writable?: boolean;
   baseRevision?: number | null;
   baseState?: DraftState;
+  conflictToken?: object | null;
   allowCandidate?: (draft: DraftEnvelope<DraftFields>) => boolean;
 };
+type DraftSubmission = {
+  instance: symbol;
+  sequence: number;
+  version: number;
+  fields: DraftFields;
+  baseRevision: number | null;
+};
+const draftOwners = new Map<string, symbol>();
 export function useDraft(options: Options) {
   const { user } = useApp();
   const [owner] = useState(() => ({
@@ -32,6 +48,17 @@ export function useDraft(options: Options) {
     accountId: user.id,
   }));
   const key = draftKey(owner.accountId, options.kind, options.targetId);
+  const [instance] = useState(() => Symbol("draft-form"));
+  const mounted = useRef(false);
+  const submissionSequence = useRef(0);
+  const acknowledgedConflict = useRef<object | null>(null);
+  // Invalidate completion effects with the DOM unmount, before passive cleanup.
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [fields, setFields] = useState<DraftFields>(options.initialFields);
   const [candidate, setCandidate] = useState<DraftEnvelope<DraftFields> | null>(
     null,
@@ -56,8 +83,16 @@ export function useDraft(options: Options) {
   latest.current = options;
   const id = useId(),
     { register } = useDirtyForms();
-  const current = () => sessionCoordinator.isCurrent(owner);
+  const current = () =>
+    mounted.current &&
+    draftOwners.get(key) === instance &&
+    sessionCoordinator.isCurrent(owner);
   const conflict =
+    !!(
+      options.conflictToken &&
+      options.conflictToken !== acknowledgedConflict.current &&
+      (candidate || state.current.dirty)
+    ) ||
     !!(
       candidate &&
       draftConflicts(
@@ -77,7 +112,7 @@ export function useDraft(options: Options) {
       ));
   const effectiveCandidate =
     candidate ??
-    (conflict
+    (conflict || (state.current.dirty && options.writable === false)
       ? {
           schema_version: 1,
           account_id: owner.accountId,
@@ -94,6 +129,7 @@ export function useDraft(options: Options) {
       o = latest.current;
     if (
       !sessionCoordinator.isCurrent(owner) ||
+      draftOwners.get(key) !== instance ||
       !o.enabled ||
       !s.loaded ||
       s.candidate ||
@@ -125,15 +161,19 @@ export function useDraft(options: Options) {
       setSavedAt(null);
       setError(true);
     }
-  }, [key, owner]);
-  useEffect(
-    () =>
-      register(id, {
-        dirty: () => state.current.dirty && sessionCoordinator.isCurrent(owner),
-        flush,
-      }),
-    [register, id, flush, owner],
-  );
+  }, [key, owner, instance]);
+  useEffect(() => {
+    draftOwners.set(key, instance);
+    const unregister = register(id, {
+      dirty: () => state.current.dirty && current(),
+      flush,
+    });
+    return () => {
+      // The departing owner gets one final flush, then cannot affect its replacement.
+      unregister();
+      if (draftOwners.get(key) === instance) draftOwners.delete(key);
+    };
+  }, [register, id, flush, owner, key, instance]);
   useEffect(() => {
     if (!options.enabled || state.current.loaded || !current()) return;
     state.current.loaded = true;
@@ -155,6 +195,26 @@ export function useDraft(options: Options) {
       setError(true);
     }
   });
+  // An explicit discard may precede the verified post-conflict read. Once that
+  // read arrives, a pristine form adopts its current server fields/base together.
+  useLayoutEffect(() => {
+    const s = state.current;
+    const revision = options.baseRevision ?? null;
+    if (
+      !options.conflictToken ||
+      !options.writable ||
+      !s.loaded ||
+      s.dirty ||
+      s.candidate ||
+      s.readError ||
+      revision === s.baseRevision
+    )
+      return;
+    s.baseRevision = revision;
+    s.baseState = options.baseState ?? {};
+    s.fields = options.initialFields;
+    setFields(s.fields);
+  }, [options.baseRevision, options.writable, options.conflictToken]);
   // Revoked internal-comment qualification removes both stored and in-memory content.
   useEffect(() => {
     const s = state.current;
@@ -213,6 +273,7 @@ export function useDraft(options: Options) {
       s.version = 0;
       s.written = 0;
       s.readError = false;
+      acknowledgedConflict.current = latest.current.conflictToken ?? null;
       s.baseRevision = latest.current.baseRevision ?? null;
       s.baseState = latest.current.baseState ?? {};
       s.fields = latest.current.initialFields;
@@ -236,6 +297,7 @@ export function useDraft(options: Options) {
     };
     s.candidate = null;
     s.dirty = true;
+    acknowledgedConflict.current = latest.current.conflictToken ?? null;
     s.baseRevision = latest.current.baseRevision ?? null;
     s.baseState = latest.current.baseState ?? {};
     s.version++;
@@ -245,7 +307,23 @@ export function useDraft(options: Options) {
     setDirty(true);
     setSavedAt(null);
   };
-  const markSubmitted = () => {
+  const beginSubmission = (): DraftSubmission => ({
+    instance,
+    sequence: ++submissionSequence.current,
+    version: state.current.version,
+    fields: { ...state.current.fields },
+    baseRevision: state.current.baseRevision,
+  });
+  const isCurrentSubmission = (submission: DraftSubmission) =>
+    current() &&
+    submission.instance === instance &&
+    submission.sequence === submissionSequence.current;
+  const markSubmitted = (submission: DraftSubmission) => {
+    if (
+      !isCurrentSubmission(submission) ||
+      submission.version !== state.current.version
+    )
+      return false;
     // Stop cleanup from recreating a submitted draft even if removeItem fails.
     state.current.dirty = false;
     state.current.version = 0;
@@ -260,6 +338,7 @@ export function useDraft(options: Options) {
     } catch {
       setError(true);
     }
+    return true;
   };
   const safe = allowedDraftFields(options.kind, fields);
   return {
@@ -271,6 +350,8 @@ export function useDraft(options: Options) {
     dirty,
     flush,
     discard,
+    beginSubmission,
+    isCurrentSubmission,
     markSubmitted,
     restore,
     error,
