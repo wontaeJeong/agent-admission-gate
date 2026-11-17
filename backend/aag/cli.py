@@ -160,3 +160,42 @@ def reindex_findings(batch_size: int = typer.Option(100, min=1, max=1000)):
         typer.echo(f"Indexed {count} completed scans")
     finally:
         db.engine.dispose()
+
+
+@app.command()
+def remind_expirations(
+    batch_size: int = typer.Option(500, min=1, max=500),
+    max_batches: int = typer.Option(20, min=1, max=20),
+    dry_run: bool = False,
+):
+    """Store bounded in-app reminders; dry-run previews candidates without any writes."""
+    from dataclasses import asdict
+
+    from .config import get_settings
+    from .db import Database
+    from .expiration_reminders import emit_due_expirations
+
+    try:
+        settings = get_settings()
+    except Exception:
+        typer.echo(json.dumps({"status": "failed", "error_code": "run_failed"}))
+        raise typer.Exit(1) from None
+    if not settings.expiry_reminders_enabled and not dry_run:
+        typer.echo(json.dumps({"status": "disabled", "scanned": 0, "emitted": 0, "skipped": 0}))
+        return
+    db = None
+    try:
+        db = Database(settings.database_url, read_only=dry_run)
+        result = emit_due_expirations(
+            db, batch_size=batch_size, max_batches=max_batches, dry_run=dry_run
+        )
+    except Exception:
+        # SQL/driver exceptions can include credentials, statements and parameters.
+        typer.echo(json.dumps({"status": "failed", "error_code": "database_failed"}))
+        raise typer.Exit(1) from None
+    finally:
+        if db is not None:
+            db.engine.dispose()
+    typer.echo(json.dumps({**asdict(result), "dry_run": dry_run}))
+    if result.status == "failed":
+        raise typer.Exit(1)

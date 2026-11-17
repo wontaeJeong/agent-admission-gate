@@ -68,6 +68,9 @@ class APIKey(Base):
     last_used_at: Mapped[float | None] = mapped_column(Float)
 
 
+Index("ix_api_keys_expiration", APIKey.expires_at, APIKey.id)
+
+
 class DeviceClient(Base):
     __tablename__ = "device_clients"
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
@@ -225,6 +228,7 @@ class Notification(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
     recipient_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     event_key: Mapped[str] = mapped_column(String(180))
+    expiry_snapshot: Mapped[float | None] = mapped_column(Float)
     sequence: Mapped[int] = mapped_column(BigInteger, default=0)
     kind: Mapped[str] = mapped_column(String(40))
     resource_type: Mapped[str] = mapped_column(String(20))
@@ -254,6 +258,16 @@ class Notification(Base):
         Index("ix_notifications_created", "created_at"),
         Index("ix_notifications_recipient_sequence", "recipient_id", "sequence"),
     )
+
+
+Index(
+    "ix_notifications_expiration",
+    Notification.recipient_id,
+    Notification.resource_type,
+    Notification.resource_id,
+    Notification.kind,
+    Notification.expiry_snapshot,
+)
 
 
 class Post(Base):
@@ -288,6 +302,9 @@ class ExceptionRule(Base):
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
     expires_at: Mapped[float] = mapped_column(Float)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+Index("ix_exceptions_expiration", ExceptionRule.expires_at, ExceptionRule.id)
 
 
 class Audit(Base):
@@ -341,5 +358,25 @@ class SavedView(Base):
             unique=True,
             sqlite_where=text("is_default = 1"),
             postgresql_where=text("is_default = true"),
+        ),
+    )
+
+
+class MaintenanceRun(Base):
+    __tablename__ = "maintenance_runs"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
+    job_name: Mapped[str] = mapped_column(String(64))
+    started_at: Mapped[float] = mapped_column(Float)
+    finished_at: Mapped[float | None] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(20))
+    scanned: Mapped[int] = mapped_column(Integer, default=0)
+    emitted: Mapped[int] = mapped_column(Integer, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(40))
+    __table_args__ = (
+        Index("ix_maintenance_runs_latest", "job_name", "started_at", "id"),
+        CheckConstraint("status IN ('running', 'success', 'failed')", name="maintenance_status"),
+        CheckConstraint(
+            "scanned >= 0 AND emitted >= 0 AND skipped >= 0", name="maintenance_counts"
         ),
     )

@@ -43,11 +43,27 @@ description: 검사와 검토 알림 확인, 읽음·보관, 수신 설정
 
 | API | 동작 |
 | --- | --- |
-| `GET /api/notifications` | `state=all\|unread\|archived`, `category=all\|scans\|reviews\|comments`, `page`, `page_size`로 조회 |
+| `GET /api/notifications` | `state=all\|unread\|archived`, `category=all\|scans\|reviews\|comments\|credentials\|exceptions`, `page`, `page_size`로 조회 |
 | `GET /api/notifications/unread-count` | 보관함·만료·권한 제외 후 미읽음 개수 |
 | `PATCH /api/notifications/{id}` | `{"read":true}` 또는 `{"archived":true}`; false로 되돌리기 |
 | `POST /api/notifications/read-all` | `{"category":"scans","before":목록의_snapshot_at,"through":목록의_snapshot_sequence}`으로 조회 시점까지 일괄 읽음 |
 | `GET /api/notification-preferences` | 본인의 수신 설정 |
-| `PUT /api/notification-preferences` | `scans`, `review_requests`, `review_results`, `comments`의 boolean 필드 부분 변경 |
+| `PUT /api/notification-preferences` | `scans`, `review_requests`, `review_results`, `review_updates`, `comments`, `credentials`, `exceptions`의 boolean 필드 부분 변경 |
 
 목록은 `items`, `total`, `unread_count`, `filtered_unread_count`, `snapshot_at`, `snapshot_sequence`을 반환합니다. 기본 페이지 크기는 25개, 최대 100개입니다. `unread_count`는 유형 필터와 무관한 개인 전체 미읽음 개수이며 `filtered_unread_count`는 선택 유형의 미읽음 개수입니다. 시간은 Unix 초입니다. 수신자 ID를 입력하거나 다른 사용자의 항목을 변경하는 기능은 없습니다.
+
+## API 키·예외 만료 알림
+
+감지가 활성화되면 API 키 소유자와 예외를 작성한 현재 관리자가 만료 알림을 받습니다. 비활성 사용자, 폐기된 키, 비활성 예외와 해당 유형의 수신을 끈 사용자는 제외됩니다. 알림 설정의 **API 키 만료 / 예외 만료**에서 수신 여부를 바꿀 수 있습니다.
+
+| 단계 | 감지 구간 |
+| --- | --- |
+| 7일 전 | 남은 시간 1일 초과~7일 이하 |
+| 1일 전 | 남은 시간 0초 초과~1일 이하 |
+| 만료됨 | 만료 시각부터 24시간 후까지 |
+
+한 실행에서는 현재 가장 긴급한 단계 하나만 저장합니다. 예약 작업이 늦었어도 지난 단계를 한꺼번에 생성하지 않습니다. 같은 대상·정확한 만료 시각·단계·수신자 조합은 겹친 실행에서도 한 번만 저장합니다. 만료일이 바뀌면 새 만료 일정으로 처리합니다.
+
+알림을 열면 `/api-keys?key=...` 또는 `/admin?tab=allowlist&exception=...`에서 현재 권한으로 대상을 확인합니다. 만료·폐기 후에도 현재 권한이 있으면 상태를 확인할 수 있고, 삭제되거나 접근 권한을 잃은 대상은 알림 목록과 개수에서 제외됩니다. 감지를 끄더라도 기존 알림 조회·읽음·보관은 유지됩니다.
+
+관리자 **운영 상태 → 만료 알림**의 **앱 내 저장**은 알림함에 실제 추가된 건수입니다. 이메일 발송, 즉시 전달 또는 사용자가 읽었다는 뜻은 아닙니다. 실행 실패와 2시간 무성공 지연을 구분해 확인할 수 있습니다. 활성화와 읽기 전용 점검은 [배포 운영](../../operations/deployment/)을 참고하세요.

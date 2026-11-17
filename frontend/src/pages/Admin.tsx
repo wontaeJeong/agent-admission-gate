@@ -234,6 +234,9 @@ function AdminRead({ tab }: { tab: string }) {
                 ))}
               </dl>
             </section>
+            {data.expiration_reminders && (
+              <ExpirationStatus data={data.expiration_reminders} />
+            )}
           </div>
         ) : safeTab === "audit" ? (
           <section className="panel">
@@ -456,5 +459,132 @@ function Exceptions() {
         </section>
       </State>
     </>
+  );
+}
+
+function ExpirationStatus({ data }: { data: any }) {
+  const t = useText();
+  const labels: Record<string, string> = {
+    disabled: t("비활성", "Disabled"),
+    configuration_required: t(
+      "활성화 시각 설정 필요",
+      "Activation time required",
+    ),
+    waiting: t("첫 성공 대기", "Waiting for first success"),
+    healthy: t("정상", "Healthy"),
+    failed: t("실패", "Failed"),
+    running: t("실행 중", "Running"),
+    delayed: t("지연", "Delayed"),
+    success: t("성공", "Success"),
+  };
+  const latest = data.latest;
+  return (
+    <section
+      className="panel form-panel"
+      style={{ gridColumn: "1 / -1" }}
+      aria-labelledby="expiration-status-title"
+    >
+      <h2 id="expiration-status-title">
+        {t("만료 알림", "Expiration reminders")}
+      </h2>
+      <p role="status">
+        <strong>
+          {labels[data.state] || t("확인 필요", "Needs attention")}
+        </strong>
+      </p>
+      {data.state === "disabled" && (
+        <p className="muted">
+          {t(
+            "새 만료 감지는 중지되어 있습니다. 기존 알림은 계속 확인할 수 있습니다.",
+            "New expiration detection is disabled. Existing notifications remain available.",
+          )}
+        </p>
+      )}
+      {data.state === "delayed" && (
+        <p className="notice">
+          {t(
+            "최근 기준 시각 이후 2시간 동안 성공한 실행이 없습니다. 예약 작업과 데이터베이스 연결을 확인하세요.",
+            "No successful run within two hours of the latest baseline. Check the scheduled job and database connection.",
+          )}
+        </p>
+      )}
+      {data.state === "configuration_required" && (
+        <p className="notice">
+          {t(
+            "유효한 활성화 시각 또는 성공 이력이 필요합니다. 운영 설정을 확인하세요.",
+            "A valid activation time or successful run history is required. Check the operating configuration.",
+          )}
+        </p>
+      )}
+      <div className="two-columns">
+        <dl className="status-list">
+          <div>
+            <dt>{t("활성화 시각", "Activation time")}</dt>
+            <dd>{timestamp(data.enabled_at)}</dd>
+          </div>
+          <div>
+            <dt>{t("마지막 성공", "Last successful run")}</dt>
+            <dd>{timestamp(data.last_success_at)}</dd>
+          </div>
+          {latest && (
+            <>
+              <div>
+                <dt>{t("최근 실행", "Latest run")}</dt>
+                <dd>{labels[latest.status] || "—"}</dd>
+              </div>
+              <div>
+                <dt>{t("시작", "Started")}</dt>
+                <dd>{timestamp(latest.started_at)}</dd>
+              </div>
+              <div>
+                <dt>{t("종료", "Finished")}</dt>
+                <dd>{timestamp(latest.finished_at)}</dd>
+              </div>
+            </>
+          )}
+        </dl>
+        {latest ? (
+          <div>
+            <dl className="status-list">
+              <div>
+                <dt>{t("검사한 후보", "Candidates checked")}</dt>
+                <dd>{latest.scanned}</dd>
+              </div>
+              <div>
+                <dt>{t("앱 내 저장", "Stored in app")}</dt>
+                <dd>{latest.emitted}</dd>
+              </div>
+              <div>
+                <dt>{t("건너뜀", "Skipped")}</dt>
+                <dd>{latest.skipped}</dd>
+              </div>
+            </dl>
+            <p className="muted">
+              {t(
+                "저장 건수는 알림함에 추가된 수이며 사용자의 확인 여부를 뜻하지 않습니다.",
+                "Stored counts are inbox additions, not confirmations that users have read them.",
+              )}
+            </p>
+            {latest.error_code && (
+              <p className="notice">
+                {latest.error_code === "candidate_failed"
+                  ? t(
+                      "일부 항목을 저장하지 못했습니다. 다음 실행에서 다시 시도할 수 있습니다.",
+                      "Some items could not be stored. A later run can retry them.",
+                    )
+                  : t(
+                      "작업을 완료하지 못했습니다. 예약 작업과 데이터베이스 연결을 확인하세요.",
+                      "The run could not finish. Check the scheduled job and database connection.",
+                    )}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="muted">
+            {t("기록된 실행이 없습니다.", "No runs recorded.")}
+          </p>
+        )}
+      </div>
+    </section>
   );
 }

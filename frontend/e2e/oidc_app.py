@@ -207,3 +207,36 @@ if os.environ.get("AAG_NOTIFICATION_TARGETS_FIXTURE") == "true":
         emit_resource_notification(s, "key.expiring_1d", "api_key", "d1-key", ["a1-alice"], "d1-key")
         emit_resource_notification(s, "key.expiring_7d", "api_key", "d1-revoked", ["a1-alice"], "d1-revoked")
         emit_resource_notification(s, "exception.expired", "exception", "d1-exception", ["a1-alice"], "d1-exception")
+
+
+expiration_mode = os.environ.get("AAG_EXPIRATION_REMINDERS_FIXTURE")
+if expiration_mode:
+    from aag.models import APIKey, ExceptionRule
+    from aag import expiration_reminders
+
+    now = expiration_reminders.database_now(app.state.db)
+    app.state.settings.expiry_reminders_enabled = expiration_mode != "disabled"
+    app.state.settings.expiry_reminders_enabled_at = None if expiration_mode == "unconfigured" else now - 14400
+    if expiration_mode == "waiting":
+        app.state.settings.expiry_reminders_enabled_at = now
+    with app.state.db.session.begin() as s:
+        s.get(User, "a1-alice").role = "admin"
+        s.add(APIKey(id="d2-key", owner_id="a1-alice", name="Build integration", digest="d2-synthetic",
+                     suffix="test", expires_at=now+3600))
+        s.add(ExceptionRule(id="d2-exception", created_by="a1-alice", source="synthetic-policy.zip",
+                            reason="Synthetic private exception reason", fingerprint="c"*64,
+                            content_hash="a"*64, expires_at=now-60))
+    if expiration_mode not in {"waiting", "unconfigured"}:
+        producer = expiration_reminders.emit_resource_notification
+        def synthetic_failure(s, kind, resource_type, resource_id, *args, **kwargs):
+            if resource_type == "api_key":
+                raise RuntimeError("Synthetic failure, private details must stay out of status")
+            return producer(s, kind, resource_type, resource_id, *args, **kwargs)
+        if expiration_mode == "failed":
+            expiration_reminders.emit_resource_notification = synthetic_failure
+            # A recent successful empty run keeps failure distinct from delay.
+            expiration_reminders.emit_due_expirations(app.state.db, now=now-120, dry_run=False,
+                                                     batch_size=1, max_batches=1)
+            app.state.settings.expiry_reminders_enabled_at = now-60
+        expiration_reminders.emit_due_expirations(app.state.db, now=now-10800 if expiration_mode == "delayed" else now)
+        expiration_reminders.emit_resource_notification = producer

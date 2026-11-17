@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: aag-expiration-reminders
+spec:
+  schedule: "5 * * * *"
+  timeZone: Etc/UTC
+  suspend: true
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 600
+      backoffLimit: 0
+      template:
+        metadata:
+          labels: {app: aag-expiration-reminders}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext: {runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: reminders
+              image: ghcr.io/wontaejeong/agent-admission-gate:0.1.0
+              command: ["aag", "remind-expirations", "--batch-size", "500", "--max-batches", "20"]
+              envFrom:
+                - configMapRef: {name: aag-config}
+                - secretRef: {name: aag-secrets}
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+              resources:
+                requests: {cpu: 100m, memory: 128Mi}
+                limits: {cpu: '1', memory: 512Mi}

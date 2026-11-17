@@ -6,3 +6,4 @@ resources:
   - configmap.yaml
   - migrate.yaml
   - networkpolicy.yaml
+  - expiration-reminders.yaml

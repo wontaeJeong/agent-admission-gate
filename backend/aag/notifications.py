@@ -45,9 +45,16 @@ def emit_notification(s, kind, job, recipients, event_key, review_id=None, *, ac
     )
 
 
-def emit_resource_notification(s, kind, resource_type, resource_id, recipients, event_key):
+def emit_resource_notification(
+    s, kind, resource_type, resource_id, recipients, event_key, *, expiry_snapshot=None
+):
     """Stage delivery in the caller transaction; never commit or lock an actor."""
-    _, job = resolve_target(s, kind, resource_type, resource_id)
+    target, job = resolve_target(s, kind, resource_type, resource_id)
+    if expiry_snapshot is not None and (
+        resource_type not in {"api_key", "exception"} or target.expires_at != expiry_snapshot
+    ):
+        raise ValueError("Notification expiry no longer matches target")
+    inserted = 0
     preference = EVENT_PREFERENCE[kind]
     recipients = set(recipients) - {None}
     query = (
@@ -73,21 +80,26 @@ def emit_resource_notification(s, kind, resource_type, resource_id, recipients, 
             )
             .returning(NotificationInbox.sequence)
         ).scalar_one()
-        s.execute(
-            conflict_insert(s, Notification)
-            .values(
-                recipient_id=recipient,
-                event_key=event_key,
-                sequence=sequence,
-                kind=kind,
-                resource_type=resource_type,
-                resource_id=resource_id,
-                job_id=job.id if job else None,
-                review_id=resource_id if resource_type == "review" else None,
-                verdict=job.effective_verdict if job and kind != "comment.created" else None,
-            )
-            .on_conflict_do_nothing(index_elements=["recipient_id", "event_key"])
+        inserted += len(
+            s.execute(
+                conflict_insert(s, Notification)
+                .values(
+                    recipient_id=recipient,
+                    event_key=event_key,
+                    expiry_snapshot=expiry_snapshot,
+                    sequence=sequence,
+                    kind=kind,
+                    resource_type=resource_type,
+                    resource_id=resource_id,
+                    job_id=job.id if job else None,
+                    review_id=resource_id if resource_type == "review" else None,
+                    verdict=job.effective_verdict if job and kind != "comment.created" else None,
+                )
+                .on_conflict_do_nothing(index_elements=["recipient_id", "event_key"])
+                .returning(Notification.id)
+            ).all()
         )
+    return inserted
 
 
 def notify_terminal(s, job):

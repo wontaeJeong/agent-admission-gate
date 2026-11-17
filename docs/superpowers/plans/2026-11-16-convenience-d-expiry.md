@@ -74,3 +74,5 @@
 - [ ] **3. PR:** 기존 발급/폐기 권한 회귀와 key-replacement E2E를 검증한다. 교체 전후·비활성 발급·예외 재검토 이미지를 포함해 feat: guide key replacement and exception revalidation로 커밋·PR을 만든다.
 
 **완료:** F07 전체. 자동 연장이나 자동 폐기는 추가하지 않는다.
+
+**D2 구현 결정(2026-11-17):** D1은 [PR #27](https://github.com/wontaeJeong/agent-admission-gate/pull/27)로 병합됐다. D2는 DB별 float 문자열 변환 차이로 중복 감지가 달라지지 않도록 `Notification.expiry_snapshot` nullable Float와 recipient/type/id/kind/expiry 인덱스를 선형 migration에 추가한다. 검증된 새 발행 사실에서만 값을 저장하며 과거 NULL은 현재 만료 시각으로 backfill하지 않는다. 정확한 event_key는 Python float.hex와 대상/단계를 포함한다. 기존 producer는 같은 트랜잭션과 정렬된 inbox 할당을 유지하면서 실제 insert 수를 반환한다. 활성화 기준은 선택적 `AAG_EXPIRY_REMINDERS_ENABLED_AT` 설정으로 웹/CLI에 동일하게 기록한다. 새 활성화 이전 성공은 기준을 늦추지 않고, 기준이 없거나 무효하면 구성 확인 상태를 표시한다. 이 두 확장은 controller가 정확한 중복 처리와 재시작 후 지연 판단을 위해 승인한 D2 범위다.

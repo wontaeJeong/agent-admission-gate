@@ -488,3 +488,34 @@
 - Ruff identified the imported pytest fixture as a redefinition when its test parameter used the same name. Matched existing explicit fixture re-export syntax and reran lint; avoid suppressing only the unused-import warning for reusable fixtures.
 
 - D1 review I1 found that replacing Actor-based notification checks with live User SQL checks omitted the OIDC privilege ceiling. External group removal can lower the authenticated Actor while persisted roles remain unchanged. Eight SQLite/PostgreSQL real-auth regressions reproduced exception/reviewer/foreign-scan leakage. Inbox visibility now intersects each live admin/reviewer predicate with its effective Actor flag; owner access and delivery's existing local checks remain intact. When centralizing authorization, test both stale local grants and externally attenuated actors, including partial admin/reviewer loss, across list/count/read-all/single mutation.
+
+## 2026-11-17: D2 탐색 경로와 초기 미구현 검증
+
+- 현상: 최초 탐색에서 `docs/plans`와 `backend/alembic/versions`가 없었고, 신규 detector/CLI/UI의 RED 검증이 실패했다. 문서 작성 도구 호출 한 번은 템플릿 문자열 속 Markdown backtick 때문에 실행 전에 구문 오류가 났다.
+- 원인: 문서와 migration 위치를 일반 경로로 추정했고, 두 문자열 문법의 구분자를 겹쳐 썼다. 테스트 실패는 각각 아직 없는 감지 모듈, CLI 명령, 관리자 섹션을 검증한 의도된 RED였다.
+- 해결: 실제 `docs/superpowers/plans`, `backend/migrations/versions` 경로를 확인하고 기존 규약에 연결했다. 문서 문자열을 안전하게 구성해 재실행했다. 두 DB에서 감지 22개와 운영 중심 46개를 구현 후 검증했다.
+- 예방: 새 경로는 `rg --files`로 먼저 확인하고 도구의 JavaScript와 쉘 문자열 경계를 구분한다. 정확한 float 일정 비교는 DB 문자열 표현으로 추정하지 않고 검증된 스냅샷으로 비교하며, 활성화 시각도 프로세스 시작 시각으로 추정하지 않는다.
+
+## 2026-11-17: D2 브라우저 상태 locator 범위
+
+- 현상: 7개 시나리오 중 실패 상태와 GET 오류 검증 2개가 실패했다.
+- 원인: 실패라는 같은 문구가 운영 상태와 최근 실행에 각각 있어 strict locator가 둘을 선택했다. 기존 공통 오류 컴포넌트는 오류 본문과 재시도 안내를 같은 부모에 표시하므로 exact text로 본문만 선택할 수 없었다.
+- 해결: 실제 접근성 snapshot을 확인하고 운영 상태는 panel의 status 역할, 오류는 alert 역할 안의 본문으로 검증한다. 제품 화면이나 오류 처리를 우회하지 않았다.
+- 예방: 복수 문맥에 존재하는 문구는 역할과 영역으로 먼저 한정하고, 공통 컴포넌트의 실제 DOM/접근성 트리를 확인한 뒤 locator를 작성한다.
+- 초기 Ruff 검증은 정렬되지 않은 신규 import와 사용하지 않는 테스트 지역 변수를 지적했다. import를 정리하고 변수 할당을 제거했으며, 최종 전체 lint/format 검증을 통과했다. 새 테스트 작성 뒤 관련 lint도 함께 확인한다.
+
+## 2026-11-17: D2 CLI 설정 실패의 진단 경계
+
+- 현상: 자체 검토에서 설정 로더가 예외를 내면 안전한 집계 JSON을 출력하지 못하는 경계를 발견했고, 합성 비공개 진단으로 재현한 테스트가 실패했다.
+- 원인: 데이터베이스 생성/실행만 예외를 정제하고 그보다 앞선 설정 로딩은 보호하지 않았다.
+- 해결: 설정 로딩 실패도 원문 예외 대신 run_failed와 실패 종료 코드로 변환한다.
+- 예방: 운영 명령의 실패 테스트는 실제 처리뿐 아니라 설정 로딩·연결 생성 등 시작 전 단계도 포함하고, 예외 본문을 출력하지 않는지 검증한다.
+
+## 2026-11-17: D2 미리보기의 SQLite 연결 시작 경계
+
+- 현상: 리뷰의 실제 CLI probe에서 dry-run이 기존 DELETE journal을 WAL로 바꾸고, 없는 DB 경로에 파일/부모 디렉터리를 생성했다.
+- 원인: 감지 함수의 SELECT-only 분기만 검증했고, CLI가 먼저 만드는 일반 Database의 mkdir·journal_mode hook은 검증하지 않았다. 기존 CLI 테스트가 이미 초기화된 DB 객체를 반환하는 mock을 사용해 이 경계를 가렸다.
+- 해결: 미리보기만 실제 읽기 전용 연결을 사용한다. SQLite는 mode=ro/query_only와 일반 잠금을 사용하고 mkdir·journal_mode 변경을 생략한다. PostgreSQL은 read-only 트랜잭션을 사용한다. 새 CLI 테스트는 unopened DELETE DB의 SHA256/mode, 없는 파일/부모, 실제 WAL 커밋 가시성과 두 엔진의 쓰기 거부를 검증한다.
+- 제한 확인: SQLite의 mode=ro도 조용한 WAL DB에서 잠금용 -wal/-shm 파일을 만들 수 있다. controller는 이를 일반 조정 파일로 허용하되 DB 내용·스키마·행·영구 journal mode 변경과 새 DB/부모 생성은 금지하도록 범위를 명시했다. immutable/nolock/custom VFS를 추가하지 않았다. 읽기 전용 exclusive 잠금 probe는 I/O 오류가 나 사용하지 않았다.
+- 테스트 준비에서 파일명에 넣은 물음표가 SQLite URL의 query 구분자로 해석돼 WAL 파일 검증이 실패했다. 실제 대상 경로를 확인하고 URL 구분자를 제외한 공백/# 이름으로 고쳤다.
+- 예방: read-only 계약은 처리 함수뿐 아니라 새 연결의 시작/종료와 파일 상태까지 검증한다. 일반 엔진 객체로 대체하지 않고 실제 CLI 생성자를 통과시키며, DB 변경과 엔진의 조정 파일 동작을 구분해 문서화한다.

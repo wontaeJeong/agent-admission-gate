@@ -18,6 +18,9 @@ data:
   AAG_BOARDS_ENABLED: "false"
   AAG_REVIEW_WORKFLOW_ENABLED: "false"
   AAG_SEARCH_ENABLED: "false"
+  AAG_EXPIRY_REMINDERS_ENABLED: "false"
+  # Set activation Unix seconds when enabling after validation.
+  # AAG_EXPIRY_REMINDERS_ENABLED_AT: "..."
   AAG_RUNNER_CONCURRENCY: "2"
   AAG_QUEUE_CAPACITY: "50"
   AAG_LLM_PROVIDER: disabled

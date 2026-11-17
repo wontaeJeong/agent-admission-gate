@@ -10,6 +10,13 @@ export async function startOidcFixture(
     reviewWorkflow?: boolean;
     search?: boolean;
     notificationTargets?: boolean;
+    expirationReminders?:
+      | "success"
+      | "failed"
+      | "delayed"
+      | "disabled"
+      | "waiting"
+      | "unconfigured";
   } = {},
 ) {
   const root = resolve(import.meta.dirname, "../..");
@@ -44,6 +51,7 @@ export async function startOidcFixture(
         AAG_PUBLIC_URL: origin,
         AAG_DATABASE_URL: `sqlite:///${directory}/fixture.db`,
         AAG_OIDC_FIXTURE_DIR: directory,
+        AAG_EXPIRATION_REMINDERS_FIXTURE: options.expirationReminders || "",
         AAG_C1_FIXTURE: options.reviewWorkflow ? "true" : "false",
         AAG_SEARCH_ENABLED: options.search ? "true" : "false",
         AAG_NOTIFICATION_TARGETS_FIXTURE: options.notificationTargets

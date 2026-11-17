@@ -30,6 +30,7 @@ title: 요구사항 추적과 검증 범위
 | 수정본 후속 검토 (C3/F10) | Review.previous_review_id, review_followups migration, review_workflow, Reviews/Scans/ReviewActivity | 요청자·완료 시각·동일 정규 Git URL/명시적 ZIP 계보 검증. rejected 기록 보존, changes_requested의 withdrawn/superseded 종료 및 새 pending/waiting 원자 생성. source/job unique와 revision CAS, 실제 SQLite/PostgreSQL 동시 HTTP·migration·업무/감사/알림 롤백. 승인·담당·예외 미복제, 불완전 coverage 승인 차단. B1 재검사에서 후속 요청, 권한 있는 양방향 링크와 각 content_hash,409 기존 후속 안내와 읽기 전용 초안. desktop dark/light·mobile·한국어 화면 증거. flag 기본 false. [PR #23](https://github.com/wontaeJeong/agent-admission-gate/pull/23) 병합 |
 | 검토·코멘트·감사 | Review/Comment/Audit | 자기 승인 금지, 중복 결정, 내부 코멘트 비노출 |
 | 개인 알림함·벨·수신 설정 | notifications.py, routes_notifications.py, Notifications.tsx | 실제 검사/검토/공개 코멘트 연결, 읽음·보관·복원·필터·페이지, 트랜잭션 중복 방지, 세션/권한/내부본문 격리, 90일 보존, 브라우저·모바일·계정 전환 |
+| 키·예외 만료 감지 (D1/D2, F07) | notification_targets.py, expiration_reminders.py, MaintenanceRun/expiry_snapshot, CLI/CronJob, 관리자 운영 상태 | D1 [PR #27](https://github.com/wontaeJeong/agent-admission-gate/pull/27) typed 권한·기존 알림 호환. SQLite/PostgreSQL 실제 1만 건 초과 후보·anti-join/keyset·중복 경합·옵트아웃·정확한 단계·시각 변경·부분 실패/재실행·읽기 전용 무쓰기·migration 보존. 앱 내 저장 집계와 사용자 읽음 구분, 2시간 지연/재활성화/설정 누락 표시, actual-app desktop/mobile/Korean 증거. default/stg/prod flag false 및 Cron suspend, 실제 활성화·배포는 별도 |
 | 예외 allowlist | source/hash/fingerprint/expiry | 다른 소스/내용에 적용 금지, 다음 검사 적용 |
 | 사이드바/라우트/9개 상세 탭 | App.tsx, Scans.tsx | 브라우저 탐색·모바일 overflow·실 데이터 |
 | 사용자 설정·표시 이름 | routes_profile.py, AccountSettings.tsx | 본인 세션 전용·계정/감사 식별자와 분리, 이름 저장/초기화·이름 소유자 격리, 브라우저 로컬 화면 설정 구분 |
