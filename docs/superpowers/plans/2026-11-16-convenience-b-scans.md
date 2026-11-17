@@ -33,12 +33,14 @@
 
 **인터페이스:** ScanRequest에 origin_job_id/target_commit/rerun_mode를 추가한다. submit의 upload 인자에 upload_origin_job_id를 추가한다. clone(url, ref, credential, root, settings, *, target_commit=None)은 기존 호출과 호환된다. Job은 origin_job_id/lineage_root_id/target_commit/rerun_mode를 반환한다.
 
-- [ ] **1. 계약 고정:** test_rerun_copies_nonsecret_settings, test_foreign_origin_rejected(404), test_snapshot_target_survives_checkout_failure, test_snapshot_ref_mutually_exclusive(422), test_unlinked_same_filename_not_grouped를 작성한다.
-- [ ] **2. 실패 확인:** uv run pytest backend/tests/test_scan_rerun.py -q.
-- [ ] **3. 제출과 계보 구현:** JSON/Multipart 제출을 확장하고 원본 owner/source_type/Git 정규 URL을 검사해 root를 설정한다. target_commit/rerun_mode는 태스크 실행 전에 저장한다. 기존 Job의 root=self를 backfill하고 owner/root/created 복합 인덱스를 추가한다.
-- [ ] **4. snapshot 구현:**40/64자리 hex만 안전한 init→fetch --depth=1→detached checkout으로 처리한다. 기존 protocol/redirect/hook/submodule 제한을 모든 command에 적용하고 실제 HEAD 일치를 확인한다. 임시 Git fixture로 브랜치 이동·없는 커밋·fetch 거부·timeout에서 fallback이 없음을 확인한다.
-- [ ] **5. UI 구현:** /new?from=ID&mode=latest|snapshot은 GET 확인 후 URL/ref/profile을 채운다. 실패한 snapshot 재시도는 target_commit을 우선한다. PAT·ZIP은 재입력하고 초기 설정과 A2 복구 후보 중 사용자가 선택하게 한다. 이중 클릭을 막고 저장 여부가 불명확한 POST는 자동 재전송하지 않는다.
+- [x] **1. 계약 고정:** test_rerun_copies_nonsecret_settings, test_foreign_origin_rejected(404), test_snapshot_target_survives_checkout_failure, test_snapshot_ref_mutually_exclusive(422), test_unlinked_same_filename_not_grouped를 작성한다.
+- [x] **2. 실패 확인:** uv run pytest backend/tests/test_scan_rerun.py -q.
+- [x] **3. 제출과 계보 구현:** JSON/Multipart 제출을 확장하고 원본 owner/source_type/Git 정규 URL을 검사해 root를 설정한다. target_commit/rerun_mode는 태스크 실행 전에 저장한다. 기존 Job의 root=self를 backfill하고 owner/root/created 복합 인덱스를 추가한다.
+- [x] **4. snapshot 구현:**40/64자리 hex만 안전한 init→fetch --depth=1→detached checkout으로 처리한다. 기존 protocol/redirect/hook/submodule 제한을 모든 command에 적용하고 실제 HEAD 일치를 확인한다. 임시 Git fixture로 브랜치 이동·없는 커밋·fetch 거부·timeout에서 fallback이 없음을 확인한다.
+- [x] **5. UI 구현:** /new?from=ID&mode=latest|snapshot은 GET 확인 후 URL/ref/profile을 채운다. 실패한 snapshot 재시도는 target_commit을 우선한다. PAT·ZIP은 재입력하고 초기 설정과 A2 복구 후보 중 사용자가 선택하게 한다. 이중 클릭을 막고 저장 여부가 불명확한 POST는 자동 재전송하지 않는다.
 - [ ] **6. PR:** 대상 pytest, source/cache/권한 회귀, frontend build, scan-rerun E2E, migration을 검증한다. latest/snapshot/ZIP 재선택/실패 이미지와 함께 feat: reuse scan settings and preserve source lineage로 커밋·PR을 만든다.
+
+**구현 상태 (2026-11-17):** 단계1–5 구현·RED/GREEN 확인. backend212개, frontend99개, 전체 E2E116개, Ruff·frontend build/format·docs build 통과; SQLite/PostgreSQL migration 왕복 및 화면7장 확인. [PR #19](https://github.com/wontaeJeong/agent-admission-gate/pull/19) 생성됨. 독립 검토 I1의 신규 메타데이터 라벨 한·영 누락을 수정했으며 최종 검토·CI·병합은 controller gate다.
 
 **완료:** F01. C3·B2에서 origin_job_id/lineage_root_id를 사용할 수 있다.
 

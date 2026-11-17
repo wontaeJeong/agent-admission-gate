@@ -55,16 +55,24 @@ async def upload_scan(
     file: UploadFile = File(...),
     profile: Literal["static", "full"] = Form("static"),
     force_rescan: bool = Form(False),
+    origin_job_id: str | None = Form(None, min_length=1, max_length=64),
     a: Actor = Depends(actor),
 ):
     a.scope("scan:write")
+    if set(await request.form()) - {"file", "profile", "force_rescan", "origin_job_id"}:
+        raise HTTPException(422, "Unsupported upload fields")
     data = await file.read(request.app.state.settings.max_upload_bytes + 1)
     if len(data) > request.app.state.settings.max_upload_bytes:
         raise HTTPException(413, "Upload exceeds size limit")
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(422, "Upload a ZIP package")
     return await request.app.state.scans.submit(
-        a, upload=data, filename=file.filename, upload_profile=profile, upload_force=force_rescan
+        a,
+        upload=data,
+        filename=file.filename,
+        upload_profile=profile,
+        upload_force=force_rescan,
+        upload_origin_job_id=origin_job_id,
     )
 
 

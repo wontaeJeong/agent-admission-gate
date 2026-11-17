@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 
 class Login(BaseModel):
@@ -9,11 +9,28 @@ class Login(BaseModel):
 
 
 class ScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    origin_job_id: str | None = Field(default=None, min_length=1, max_length=64)
+    target_commit: str | None = Field(
+        default=None, pattern=r"^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$"
+    )
+    rerun_mode: Literal["latest", "snapshot"] | None = None
     url: str = Field(max_length=2048)
     ref: str | None = Field(default=None, max_length=200, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._/+-]*$")
     profile: Literal["static", "full"] = "static"
     force_rescan: bool = False
     credential: SecretStr | None = None
+
+    @model_validator(mode="after")
+    def snapshot_contract(self):
+        if self.target_commit:
+            if self.ref or self.rerun_mode == "latest":
+                raise ValueError("target_commit cannot be combined with ref or latest mode")
+            self.target_commit = self.target_commit.lower()
+            self.rerun_mode = "snapshot"
+        elif self.rerun_mode == "snapshot":
+            raise ValueError("snapshot requires target_commit")
+        return self
 
 
 class KeyRequest(BaseModel):

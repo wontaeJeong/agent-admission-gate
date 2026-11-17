@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import ipaddress
 import os
+import re
 import signal
 import socket
 import stat
@@ -167,9 +168,13 @@ async def command(argv, *, cwd, timeout, env=None, max_output=4_000_000, max_dis
         await asyncio.gather(watcher, capture, return_exceptions=True)
 
 
-async def clone(url, ref, credential, root, settings):
+async def clone(url, ref, credential, root, settings, *, target_commit=None):
     import base64
 
+    if target_commit is not None:
+        if ref or not re.fullmatch(r"(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})", target_commit):
+            raise SourceError("Snapshot requires a full commit ID and no branch or tag")
+        target_commit = target_commit.lower()
     url = await asyncio.to_thread(validate_git_url, url, settings.allowed_git_hosts)
     env = {}
     if credential:
@@ -179,7 +184,7 @@ async def clone(url, ref, credential, root, settings):
             GIT_CONFIG_KEY_0="http.extraHeader",
             GIT_CONFIG_VALUE_0="Authorization: Basic " + auth,
         )
-    args = [
+    prefix = [
         "git",
         "-c",
         "http.followRedirects=false",
@@ -189,27 +194,70 @@ async def clone(url, ref, credential, root, settings):
         "protocol.https.allow=always",
         "-c",
         "core.hooksPath=/dev/null",
-        "clone",
-        "--depth=1",
-        "--no-recurse-submodules",
-        "--no-local",
+        "-c",
+        "submodule.recurse=false",
     ]
-    if ref:
-        args += ["--branch", ref]
-    args += ["--", url, str(root / "source")]
-    code, _, _ = await command(
-        args,
-        cwd=root,
-        timeout=settings.scan_timeout,
-        env=env,
-        max_disk=settings.max_extracted_bytes,
-    )
-    env.clear()
-    if code:
-        raise SourceError("Repository checkout failed; verify URL, ref and access credential")
     checkout = root / "source"
-    _, revision, _ = await command(["git", "rev-parse", "HEAD"], cwd=checkout, timeout=10)
-    return checkout, safe_files(checkout, settings), revision.strip()
+
+    async def run(args, cwd):
+        code, output, _ = await command(
+            prefix + args,
+            cwd=cwd,
+            timeout=settings.scan_timeout,
+            env=env,
+            max_disk=settings.max_extracted_bytes,
+        )
+        if code:
+            raise SourceError(
+                "Snapshot checkout failed; requested commit was not replaced with latest"
+                if target_commit
+                else "Repository checkout failed; verify URL, ref and access credential"
+            )
+        return output.strip()
+
+    try:
+        # One total checkout budget covers all commands, including revision verification.
+        async with asyncio.timeout(settings.scan_timeout):
+            if target_commit:
+                checkout.mkdir()
+                await run(
+                    [
+                        "init",
+                        "--template=",
+                        "--object-format=" + ("sha256" if len(target_commit) == 64 else "sha1"),
+                    ],
+                    checkout,
+                )
+                await run(
+                    [
+                        "fetch",
+                        "--depth=1",
+                        "--no-tags",
+                        "--no-recurse-submodules",
+                        "--",
+                        url,
+                        target_commit,
+                    ],
+                    checkout,
+                )
+                await run(["checkout", "--detach", "--force", target_commit, "--"], checkout)
+            else:
+                args = [
+                    "clone",
+                    "--depth=1",
+                    "--no-recurse-submodules",
+                    "--no-local",
+                    "--template=",
+                ]
+                if ref:
+                    args += ["--branch", ref]
+                await run(args + ["--", url, str(checkout)], root)
+            revision = await run(["rev-parse", "--verify", "HEAD"], checkout)
+            if target_commit and revision.lower() != target_commit:
+                raise SourceError("Snapshot checkout did not match requested commit")
+    finally:
+        env.clear()
+    return checkout, safe_files(checkout, settings), revision
 
 
 def content_hash(files, root):
