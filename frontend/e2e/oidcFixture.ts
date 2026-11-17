@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 /** Own one isolated API/database; replace only the external provider boundary. */
 export async function startOidcFixture(
-  options: { reviewWorkflow?: boolean; search?: boolean } = {},
+  options: {
+    reviewWorkflow?: boolean;
+    search?: boolean;
+    notificationTargets?: boolean;
+  } = {},
 ) {
   const root = resolve(import.meta.dirname, "../..");
   const socket = createServer();
@@ -42,6 +46,9 @@ export async function startOidcFixture(
         AAG_OIDC_FIXTURE_DIR: directory,
         AAG_C1_FIXTURE: options.reviewWorkflow ? "true" : "false",
         AAG_SEARCH_ENABLED: options.search ? "true" : "false",
+        AAG_NOTIFICATION_TARGETS_FIXTURE: options.notificationTargets
+          ? "true"
+          : "false",
       },
       stdio: "ignore",
     },

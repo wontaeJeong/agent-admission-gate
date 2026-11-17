@@ -50,9 +50,13 @@ export function Notifications() {
   )
     ? params.get("view")!
     : "all";
-  const category = ["scans", "reviews", "comments"].includes(
-    params.get("category") || "",
-  )
+  const category = [
+    "scans",
+    "reviews",
+    "comments",
+    "credentials",
+    "exceptions",
+  ].includes(params.get("category") || "")
     ? params.get("category")!
     : "all";
   const requestedPage = Number(params.get("page") || 1);
@@ -84,8 +88,8 @@ export function Notifications() {
         eyebrow="INBOX"
         title={t("알림함", "Notifications")}
         description={t(
-          "검사와 검토의 새 소식을 한곳에서 확인하세요. 알림은 90일간 보관됩니다.",
-          "Scan and review updates in one place. Notifications are kept for 90 days.",
+          "검사·검토·키·예외 알림은 90일간 보관됩니다.",
+          "Scan, review, key and exception notifications are kept for 90 days.",
         )}
         actions={
           <button
@@ -223,6 +227,8 @@ function Inbox({
             <option value="scans">{t("검사", "Scans")}</option>
             <option value="reviews">{t("검토", "Reviews")}</option>
             <option value="comments">{t("코멘트", "Comments")}</option>
+            <option value="credentials">{t("API 키", "API keys")}</option>
+            <option value="exceptions">{t("예외", "Exceptions")}</option>
           </select>
         </label>
         {view !== "archived" && (
@@ -236,6 +242,11 @@ function Inbox({
         )}
       </div>
       <ErrorMessage value={error || load.error} />
+      {load.error && (
+        <button onClick={() => setReload((value) => value + 1)}>
+          {t("다시 시도", "Retry")}
+        </button>
+      )}
       <State loading={load.loading}>
         {load.data && (
           <>
@@ -350,6 +361,8 @@ type Preferences = {
   review_results: boolean;
   review_updates: boolean;
   comments: boolean;
+  credentials: boolean;
+  exceptions: boolean;
 };
 
 export function OpenNotification() {
@@ -455,6 +468,22 @@ function PreferenceForm({ initial }: { initial: Preferences }) {
     }
   }
   const fields: [keyof Preferences, string, string][] = [
+    [
+      "credentials",
+      t("API 키 만료", "API key expiry"),
+      t(
+        "본인 키의 만료 예정과 만료",
+        "Upcoming expiry and expiry of your keys",
+      ),
+    ],
+    [
+      "exceptions",
+      t("예외 만료", "Exception expiry"),
+      t(
+        "현재 관리자이며 본인이 등록한 예외의 만료",
+        "Expiry of exceptions you created while you remain an administrator",
+      ),
+    ],
     [
       "scans",
       t("검사 소식", "Scan updates"),

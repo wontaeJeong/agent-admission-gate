@@ -14,6 +14,7 @@ import {
   CircleCheck,
   CircleX,
   MessageSquare,
+  KeyRound,
   ShieldCheck,
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
@@ -27,6 +28,9 @@ export type Notification = {
   kind: string;
   source: string;
   href: string;
+  resource_type: "scan" | "review" | "api_key" | "exception";
+  resource_id: string;
+  target_state: string;
   verdict: string | null;
   created_at: number;
   read_at: number | null;
@@ -211,18 +215,40 @@ export function notificationLabel(
     "review.responded": t("설명이 보충되었습니다", "Explanation added"),
     "review.withdrawn": t("검토 요청이 철회되었습니다", "Review withdrawn"),
     "comment.created": t("새 코멘트가 등록되었습니다", "New comment"),
+    "key.expiring_7d": t(
+      "API 키가 7일 이내에 만료됩니다",
+      "API key expires within 7 days",
+    ),
+    "key.expiring_1d": t(
+      "API 키가 1일 이내에 만료됩니다",
+      "API key expires within 1 day",
+    ),
+    "key.expired": t("API 키가 만료되었습니다", "API key expired"),
+    "exception.expiring_7d": t(
+      "예외가 7일 이내에 만료됩니다",
+      "Exception expires within 7 days",
+    ),
+    "exception.expiring_1d": t(
+      "예외가 1일 이내에 만료됩니다",
+      "Exception expires within 1 day",
+    ),
+    "exception.expired": t("예외가 만료되었습니다", "Exception expired"),
   };
   return labels[kind] || t("새 알림", "New notification");
 }
 
 export function NotificationIcon({ kind }: { kind: string }) {
-  const Icon = kind.startsWith("review.")
-    ? ShieldCheck
-    : kind.startsWith("comment.")
-      ? MessageSquare
-      : kind === "scan.completed"
-        ? CircleCheck
-        : CircleX;
+  const Icon = kind.startsWith("key.")
+    ? KeyRound
+    : kind.startsWith("exception.")
+      ? ShieldCheck
+      : kind.startsWith("review.")
+        ? ShieldCheck
+        : kind.startsWith("comment.")
+          ? MessageSquare
+          : kind === "scan.completed"
+            ? CircleCheck
+            : CircleX;
   return (
     <span
       className={
@@ -241,6 +267,20 @@ export function NotificationText({ item }: { item: Notification }) {
     <span className="notification-copy">
       <strong>{notificationLabel(item.kind, t)}</strong>
       <span className="notification-source">{item.source}</span>
+      {(item.resource_type === "api_key" ||
+        item.resource_type === "exception") && (
+        <small>
+          {item.resource_type === "api_key"
+            ? t("API 키", "API key")
+            : t("예외", "Exception")}
+          {" · "}
+          {item.target_state === "revoked"
+            ? t("폐기됨", "Revoked")
+            : item.target_state === "expired"
+              ? t("만료됨", "Expired")
+              : t("활성", "Active")}
+        </small>
+      )}
       <small>
         <time dateTime={new Date(item.created_at * 1000).toISOString()}>
           {timestamp(item.created_at)}

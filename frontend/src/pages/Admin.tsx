@@ -319,10 +319,21 @@ function AdminRead({ tab }: { tab: string }) {
   );
 }
 function Exceptions() {
+  const [params] = useSearchParams();
+  const requested = params.has("exception");
+  const exceptionId =
+    params.getAll("exception").length === 1 &&
+    /^[A-Za-z0-9_-]{1,64}$/.test(params.get("exception") || "")
+      ? params.get("exception")
+      : null;
   const send = useAccountMutation();
   const [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
-    load = useLoad("/admin/allowlist", refresh),
+    load = useLoad(
+      "/admin/allowlist" +
+        (exceptionId ? "?exception=" + encodeURIComponent(exceptionId) : ""),
+      refresh,
+    ),
     t = useText();
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -380,11 +391,30 @@ function Exceptions() {
         </form>
       </section>
       <State {...load}>
+        {requested &&
+          load.data &&
+          !load.data.some((item: any) => item.id === exceptionId) && (
+            <p className="notice" role="status">
+              {t(
+                "선택한 예외를 찾을 수 없습니다.",
+                "The selected exception was not found.",
+              )}
+            </p>
+          )}
         <section className="panel">
           {load.data?.length ? (
             load.data.map((e: any) => (
-              <div className="device-row" key={e.id}>
+              <div
+                className="device-row"
+                key={e.id}
+                aria-current={exceptionId === e.id ? "true" : undefined}
+              >
                 <div>
+                  {exceptionId === e.id && (
+                    <p className="notice" role="status">
+                      {t("선택한 예외", "Selected exception")}
+                    </p>
+                  )}
                   <h3>{e.source}</h3>
                   <p>{e.reason}</p>
                   <small>{timestamp(e.expires_at)}</small>

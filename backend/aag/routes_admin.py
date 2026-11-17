@@ -435,15 +435,21 @@ def export_audit(
 
 
 @router.get("/allowlist")
-def exceptions(request: Request, a: Actor = Depends(actor)):
+def exceptions(
+    request: Request,
+    exception: str | None = Query(None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    a: Actor = Depends(actor),
+):
     a.admin()
     with request.app.state.db.session() as s:
-        return [
-            record(e)
-            for e in s.scalars(
-                select(ExceptionRule).order_by(ExceptionRule.expires_at.desc()).limit(1000)
-            )
-        ]
+        rows = list(
+            s.scalars(select(ExceptionRule).order_by(ExceptionRule.expires_at.desc()).limit(1000))
+        )
+        if exception and exception not in {row.id for row in rows}:
+            selected = s.get(ExceptionRule, exception)
+            if selected is not None:
+                rows.append(selected)
+        return [record(row) for row in rows]
 
 
 @router.post("/allowlist", status_code=201)

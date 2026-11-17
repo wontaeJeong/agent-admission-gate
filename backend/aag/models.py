@@ -5,6 +5,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     Float,
     ForeignKey,
     Index,
@@ -207,6 +208,8 @@ class NotificationPreference(Base):
     review_results: Mapped[bool] = mapped_column(Boolean, default=True)
     review_updates: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
     comments: Mapped[bool] = mapped_column(Boolean, default=True)
+    credentials: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
+    exceptions: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true())
 
 
 class NotificationInbox(Base):
@@ -224,13 +227,21 @@ class Notification(Base):
     event_key: Mapped[str] = mapped_column(String(180))
     sequence: Mapped[int] = mapped_column(BigInteger, default=0)
     kind: Mapped[str] = mapped_column(String(40))
-    job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
+    resource_type: Mapped[str] = mapped_column(String(20))
+    resource_id: Mapped[str] = mapped_column(String(64))
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"))
     review_id: Mapped[str | None] = mapped_column(ForeignKey("reviews.id", ondelete="CASCADE"))
     verdict: Mapped[str | None] = mapped_column(String(20))
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     read_at: Mapped[float | None] = mapped_column(Float)
     archived_at: Mapped[float | None] = mapped_column(Float)
     __table_args__ = (
+        CheckConstraint(
+            "(resource_type = 'scan' AND job_id IS NOT NULL AND resource_id = job_id AND review_id IS NULL) OR "
+            "(resource_type = 'review' AND job_id IS NOT NULL AND review_id IS NOT NULL AND resource_id = review_id) OR "
+            "(resource_type IN ('api_key', 'exception') AND job_id IS NULL AND review_id IS NULL)",
+            name="ck_notification_target",
+        ),
         UniqueConstraint("recipient_id", "event_key", name="uq_notification_recipient_event"),
         Index("ix_notifications_recipient_created", "recipient_id", "created_at", "id"),
         Index(

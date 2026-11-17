@@ -474,3 +474,15 @@
 - Final source review found search tab styling used active while the existing shared tabs stylesheet expects selected. Reused the established selected class without new colors; aria-selected stays the semantic boundary. Match existing component class contracts before validating visual states.
 
 - Independent review visibility also applies to the live review status joined into finding snippets. A synthetic different-requester record was invisible through the original review GET but its status appeared in a finding snippet. RED reproduced this; reused review_queue_predicates inside the outer join so source access cannot grant review projection access.
+
+## 2026-11-17 — D1 typed notification targets
+
+- Initial source inspection assumed nonexistent routes_keys/test_migrations and returnTo filenames. Failed reads made no changes; actual imports and file inventory located the existing modules. Use the repository inventory before opening conventional names.
+- The first new HTTP mutation helper omitted Origin, producing CSRF403 instead of exercising target authorization. Added the fixture's actual public origin and reran the same cases. Copy the complete existing HTTP security fixture contract, not only its session cookie.
+- Separate target lookups after the authorized notification query exposed a transferred key's updated label. Reproduced on SQLite and PostgreSQL; projected only public label/state in the same authorized SQL statement. Keep authorization and response projection within one database snapshot.
+- Existing key/exception lists cap results at500/1000, so selecting only from those rows incorrectly treats an older valid notification target as missing. Added one bounded optional exact-target query, retaining the capped ordinary list and appending at most one authorized item. Test old targets beyond the cap and foreign/role-lost actors.
+- Browser assertions initially used an exact text label that included nested option text and expected a component-specific denial message before the app's403 gate. Used the rendered combobox accessible name and existing protected-route alert. Inspect the accessibility tree before changing production behavior to fit a test.
+- The list error state exposed only the page Refresh control; the required inline Retry assertion failed. Added an explicit bilingual GET retry beside the error. Verify the actual recovery action, and use the account menu for language changes instead of storage changes overwritten by fixture initialization.
+
+- Root visual QA rejected the first mobile captures because resizing from desktop caught the sidebar's150ms transition and clipped the content. Capture now asserts the sidebar's real right edge is offscreen after any needed user-visible close action. Assert settled layout geometry rather than merely setting viewport size.
+- Ruff identified the imported pytest fixture as a redefinition when its test parameter used the same name. Matched existing explicit fixture re-export syntax and reran lint; avoid suppressing only the unused-import warning for reusable fixtures.

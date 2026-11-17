@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 import httpx
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select, update
 
@@ -254,12 +254,17 @@ async def oidc_callback(request, code, state):
     return response
 
 
-def key_rows(s, owner=None):
+def key_rows(s, owner=None, selected_id=None):
     q = select(APIKey).order_by(APIKey.created_at.desc())
     if owner:
         q = q.where(APIKey.owner_id == owner)
+    keys = list(s.scalars(q.limit(500)))
+    if selected_id and selected_id not in {key.id for key in keys}:
+        selected = s.scalar(q.where(APIKey.id == selected_id))
+        if selected is not None:
+            keys.append(selected)
     rows = []
-    for key in s.scalars(q.limit(500)):
+    for key in keys:
         uses = s.scalars(
             select(Usage).where(
                 Usage.key_id == key.id,
@@ -285,10 +290,14 @@ def key_rows(s, owner=None):
 
 
 @router.get("/api-keys")
-def keys(request: Request, a: Actor = Depends(actor)):
+def keys(
+    request: Request,
+    key: str | None = Query(None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$"),
+    a: Actor = Depends(actor),
+):
     a.interactive()
     with request.app.state.db.session() as s:
-        return key_rows(s, a.id)
+        return key_rows(s, a.id, key)
 
 
 @router.post("/api-keys", status_code=201)

@@ -43,6 +43,8 @@
 
 **완료:** F07 기반. 기존 알림 소비자는 source/href를 계속 사용할 수 있다.
 
+**D1 구현 결정(2026-11-17):** 기존 키 목록500건·예외 목록1,000건 제한 밖의 유효 대상도 선택할 수 있어야 한다. 기존 GET의 선택적 key/exception query로 정확한 대상 하나만 현재 권한으로 조회하여 일반 목록 뒤에 추가한다(최대501/1,001건). 기본 응답 형태와 제한은 유지하며, 다른 소유자의 키·삭제된 대상·관리 권한 상실은 추가 데이터를 노출하지 않는다. 이를 위해 routes_identity.py와 routes_admin.py를 D1 수정 범위에 포함한다.
+
 ## D2 만료 감지와 운영 확인
 
 **수정 파일:** backend/aag/cli.py, backend/aag/config.py, backend/aag/models.py, backend/aag/routes_admin.py; frontend/src/pages/Admin.tsx; deploy/k8s/base/kustomization.yaml; docs/src/content/docs/guides/notifications.md, docs/src/content/docs/operations/deployment.md.
