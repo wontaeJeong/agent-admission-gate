@@ -1,6 +1,8 @@
 # 사용자 작업 보존 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 현재 요청은 설계·플랜 작성이며 이 문서 자체가 제품 구현 시작 지시는 아니다.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 아래 단계는 원래 구현 계획이며 체크는 2026-11-17의 실제 기능 PR 병합을 반영한다. 운영 배포·활성화 완료 표시는 아니다.
+
+**전달 상태 (2026-11-17):** [A1 · PR #16](https://github.com/wontaeJeong/agent-admission-gate/pull/16), [A2 · PR #17](https://github.com/wontaeJeong/agent-admission-gate/pull/17), [A3 · PR #18](https://github.com/wontaeJeong/agent-admission-gate/pull/18) 병합. 각 최종 head의 독립 검토와 필수 CI 5개 성공을 확인했다. 정확한 head/CI·검증 시점·화면·판단 비용·남은 Minor는 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)을 따른다. 전체 검토 I1/I2의 최종 수정은 별도 PR의 범위 재검토·정확한 head CI가 병합 조건이다.
 
 **Goal:** F02·F03·F04의 초안 복구, 목록 복원, 저장된 보기, 로그인 복귀를 제공한다.
 
@@ -50,16 +52,16 @@
 
 **생성 파일:** frontend/src/drafts.ts, frontend/src/useDraft.ts, frontend/src/DirtyForms.tsx, frontend/src/DraftRecovery.tsx, frontend/src/drafts.test.ts; frontend/e2e/drafts.spec.ts.
 
-**인터페이스:** DraftKind는 scan_new/review_request/review_decision/scan_comment/board_post다. DraftEnvelope<T>는 schema_version/account_id/kind/target_id/base_revision/base_state/saved_at/fields를 가진다. base_revision은 nullable이고 C1 전에는 base_state(status/decided_at/review_id)와 최신 GET으로 충돌을 검사한다. readDraft(key, now), writeDraft(key, envelope, now), clearDraft(key), clearAccountDrafts(accountId)를 제공한다. useDraft는 복구 후보·dirty·flush·discard와 beginSubmission/isCurrentSubmission/markSubmitted(receipt)를 반환한다. 성공 후 초기화·닫기·새로고침·이동은 현재 폼 수명·tuple 소유권·제출 순서·입력 버전을 확인한 markSubmitted가 true일 때만 수행한다. DirtyFormsProvider가 여러 폼을 등록받아 useBlocker를 한 번만 호출한다.
+**인터페이스:** DraftKind는 scan_new/review_request/review_decision/scan_comment/board_post다. DraftEnvelope<T>는 schema_version/account_id/kind/target_id/base_revision/base_state/saved_at/fields를 가진다. base_revision은 nullable이고 C1 전에는 base_state(status/decided_at/review_id)와 최신 GET으로 충돌을 검사한다. readDraft(key, now), writeDraft(key, envelope, now), clearDraft(key), clearAccountDrafts(accountId)를 제공한다. useDraft는 복구 후보·dirty·flush·discard와 beginSubmission/isCurrentSubmission/markSubmitted(receipt)를 반환한다. 성공 후 파괴적 초기화·닫기·이동은 현재 폼 수명·tuple 소유권·제출 순서·입력 버전을 확인한 markSubmitted가 true일 때만 수행한다. DirtyFormsProvider가 여러 폼을 등록받아 useBlocker를 한 번만 호출한다.
 
 - [x] **1. 저장소 사례 고정:** fake Storage와 고정 now로24시간 경계,21번째 초안의 오래된 순 제거,256KiB 초과, schema 불일치, 같은 계정의 다른 target 분리, PAT/token/file 필드 제외를 확인한다.
 - [x] **2. 실패 확인:** cd frontend && npm test -- drafts.test.ts. 미구현으로 실패하는지 확인한다.
 - [x] **3. 저장과 라우터 구현:** kind별 필드 allowlist로300ms 저장하고 pagehide 등에서 동기 flush한다. main.tsx를 createBrowserRouter/RouterProvider 단일 root로 바꾸되 App의 경로를 유지한다. 하나의 DirtyFormsProvider에 모든 dirty 폼을 등록한다. SSO 전에는 A1 flush, hard reload에는 beforeunload를 적용한다.
 - [x] **4. 폼 연결:** 최초 GET과 권한 확인 뒤 복구 후보를 보여주고 명시적 복구 없이 서버 값을 덮어쓰지 않는다. 검토 revision, 내부 코멘트 자격, 게시판 flag/revision을 재확인한다. 성공한 폼의 초안만 제거하고 로그아웃 뒤 cleanup의 재저장은 generation으로 차단한다.
 - [x] **5. 브라우저 검증:** test_two_dirty_forms_preserved에서 결정 사유·코멘트를 모두 작성하고 이탈 취소/진행을 확인한다. test_account_switch_never_restores_foreign_draft, test_storage_error_is_visible, test_decided_review_preserves_readonly_draft, test_tab_change_flushes를 추가한다. PAT와 ZIP이 복구 대상이 아님을 확인한다.
-- [x] **6. PR 작성·로컬 검증:** drafts 단위·build·drafts E2E·기존 account/review E2E를 통과하고 화면 증거와 함께 [PR #17](https://github.com/wontaeJeong/agent-admission-gate/pull/17)을 작성했다. 수정 후 독립 재검토·최신 head 필수 CI·병합은 대기 중이다.
+- [x] **6. PR 작성·로컬 검증:** drafts 단위·build·drafts E2E·기존 account/review E2E를 통과하고 화면 증거와 함께 [PR #17](https://github.com/wontaeJeong/agent-admission-gate/pull/17)을 작성했다. 독립 재검토·최종 head CI를 통과해 병합됐다.
 
-검증 기록: 초기 구현은 unit80·집중 E2E46·전체 browser73·build·format·docs build를 통과했다. PR17 초기 head `75435fb`의 필수 CI 5개 통과는 실행 담당자가 확인했다. 검토 수정 `209b978`은 frontend unit87개, drafts38개를 포함한 전체 browser88개, build·format을 통과했다. `frontend/src/drafts.test.ts`, `frontend/src/session.test.ts`, `frontend/e2e/drafts.spec.ts`가 저장·복구와 수정 회귀를 검증한다. 두 dirty 폼은 단일 blocker를 사용하며, target 변경은 폼을 다시 마운트한다. 같은 계정 만료는 초안을 유지하고 명시적 로그아웃·다른 계정 관찰은 정리한다. 저장 불가 시 입력을 유지하고 오류를 표시하며 인증 정보·query·fragment가 포함된 URL은 저장에서 제외한다. 권한을 확인한 같은 target의 GET5xx/network 실패와 재시도는 기존 폼·입력·초점을 유지하며 오류를 함께 표시한다. 401/403/404는 캐시를 제거한다. mutation409는 캐시보다 우선하며 검토 사유를 읽기 전용으로 유지한다. 게시글 충돌은 거절된 revision보다 새 revision을 확인하고 명시적으로 재편집/버리기 전까지 제출을 막는다. 공지 수정은 작성자 여부와 관계없이 현재 admin만 가능하다. 이전 폼의 늦은 응답은 새 초안을 지우거나 페이지를 이동하지 않는다. 화면 증거13개: `docs/engineering/screenshots/convenience-a2/`. 복구 desktop dark/light·mobile, 저장 실패·읽기 전용 충돌·polling 오류 중 폼 유지·공지 권한 상실 desktop/mobile을 확인했으며 모바일 가로 넘침이 없다. PR17 수정 후 재검토·최신 head 필수 CI·병합은 대기 중이다.
+검증 기록: 당시 초기 구현은 unit80·집중 E2E46·전체 browser73·build·format·docs build를 통과했다. PR17 초기 head `75435fb`의 필수 CI 5개 통과는 실행 담당자가 확인했다. 검토 수정 `209b978`은 frontend unit87개, drafts38개를 포함한 전체 browser88개, build·format을 통과했다. `frontend/src/drafts.test.ts`, `frontend/src/session.test.ts`, `frontend/e2e/drafts.spec.ts`가 저장·복구와 수정 회귀를 검증한다. 두 dirty 폼은 단일 blocker를 사용하며, target 변경은 폼을 다시 마운트한다. 같은 계정 만료는 초안을 유지하고 명시적 로그아웃·다른 계정 관찰은 정리한다. 저장 불가 시 입력을 유지하고 오류를 표시하며 인증 정보·query·fragment가 포함된 URL은 저장에서 제외한다. 권한을 확인한 같은 target의 GET5xx/network 실패와 재시도는 기존 폼·입력·초점을 유지하며 오류를 함께 표시한다. 401/403/404는 캐시를 제거한다. mutation409는 캐시보다 우선하며 검토 사유를 읽기 전용으로 유지한다. 게시글 충돌은 거절된 revision보다 새 revision을 확인하고 명시적으로 재편집/버리기 전까지 제출을 막는다. 공지 수정은 작성자 여부와 관계없이 현재 admin만 가능하다. 이전 폼의 늦은 응답은 새 초안을 지우거나 페이지를 이동하지 않는다. 화면 증거13개: `docs/engineering/screenshots/convenience-a2/`. 복구 desktop dark/light·mobile, 저장 실패·읽기 전용 충돌·polling 오류 중 폼 유지·공지 권한 상실 desktop/mobile을 확인했으며 모바일 가로 넘침이 없다. PR17 최종 3fda6a5의 unit87·전체 browser89와 CI 44003161915 필수 5개 성공 후 병합됐다.
 
 **완료:** F02. C2에서 새 검토 상태의 복구 허용 여부를 추가한다.
 
@@ -76,8 +78,10 @@
 - [x] **3. 저장 계층 구현:** owner/resource/name unique와 DB partial unique index로 기본 보기를 최대1개로 제한한다. owner User 행의 update lock 이후 개수·기본 보기를 검증해 SQLite/PostgreSQL 모두 직렬화한다. default가 해제된 기존 행의 revision도 증가한다. 모든 작업은 interactive/account-bound이며 갱신은 CAS다.
 - [x] **4. 화면 구현:** listNavigation으로 URL+scroll을 보존하고 상세의 고정/jobs 링크를 바꾼다. 명시 query>저장 default>표준 순서로 적용하며 비교 화면의 복귀도 같은 계약을 사용한다. 권한을 잃은 보기는 usable=false로 표시하고 수정·삭제를 제공한다.
 - [x] **5. 브라우저 검증:** 필터된3페이지→상세→목록의 query/행/scroll, 직접 상세 진입, back/forward, 결과 감소로 무효가 된 페이지, 재로그인 뒤 default, staff 자격 상실, 다른 탭의 보기 수정 충돌을 확인한다.
-- [ ] **6. PR:** SQLite/PostgreSQL 대상 pytest, 단위/build/saved-views E2E, migration round trip을 통과시킨다. 저장 보기·권한 무효 이미지와 함께 feat: restore list context and save personal views로 커밋·PR을 만든다.
+- [x] **6. PR:** SQLite/PostgreSQL 대상 pytest, 단위/build/saved-views E2E, migration round trip을 통과시킨다. 저장 보기·권한 무효 이미지와 함께 feat: restore list context and save personal views로 커밋·PR을 만든다.
 
 **완료:** F03. C1/E2가 필터를 추가하면 allowlist와 저장 schema도 함께 갱신한다.
 
-[PR #18](https://github.com/wontaeJeong/agent-admission-gate/pull/18)에서 구현·검증·검토를 추적한다. 6단계는 검토와 필수 최종 체크가 완료되기 전까지 미완료로 둔다. 1차 검토 수정: 요청 경로와 일치하는 결과 이후에만 페이지·스크롤을 복원하며, 검증된 탐색 항목 식별자와 목록 상태를 탭에 보존해 문서가 다시 만들어지는 실제 뒤로가기에서도 원래 URL을 따른다. 새 빈 쿼리 진입·재로그인·새로고침에서는 현재 기본 보기를 적용한다.
+[PR #18](https://github.com/wontaeJeong/agent-admission-gate/pull/18)에서 구현·검증·검토를 추적한다. 6단계는 최종 재검토와 CI 44011709856 성공 후 병합으로 완료됐다. 1차 검토 수정: 요청 경로와 일치하는 결과 이후에만 페이지·스크롤을 복원하며, 검증된 탐색 항목 식별자와 목록 상태를 탭에 보존해 문서가 다시 만들어지는 실제 뒤로가기에서도 원래 URL을 따른다. 새 빈 쿼리 진입·재로그인·새로고침에서는 현재 기본 보기를 적용한다.
+
+최종 I1 수정은 생성 DTO의 최소 ID 확인을 성공 초기화보다 앞에 둔다. 성공 본문을 읽지 못하면 입력을 보존하고 명시적 GET 전 재제출을 막는다. 약한 현재 요청 guard의 busy/error 정리와 강한 편집 버전 guard의 초기화를 구분한다. A2 변경 없는 flush 시각 hook 회귀와 중첩 목록 복귀 제한은 전달 기록 M1/M5에 남긴다. C2 상태 복구와 E1의 정확한 발견 선택도 현재 병합된 범위다.

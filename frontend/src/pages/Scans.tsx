@@ -37,6 +37,8 @@ import {
 } from "lucide-react";
 import {
   APIError,
+  APIResponseError,
+  requireResourceIdentity,
   api,
   number,
   timestamp,
@@ -369,6 +371,8 @@ function NewScanForm({
         "/scans?mine=true&page_size=25",
       );
       if (!draft.isCurrentSubmission(submitted)) return;
+      if (!Array.isArray(response.items)) throw new APIResponseError();
+      response.items.forEach(requireResourceIdentity);
       setChecked(response.items);
       setUncertain(false);
     } catch (e) {
@@ -415,6 +419,7 @@ function NewScanForm({
         if (linked && origin) upload.set("origin_job_id", origin.id);
         result = await send("/scans/upload", upload);
       }
+      requireResourceIdentity(result);
       if (!draft.markSubmitted(submission)) return;
       navigate("/jobs/" + result.id);
     } catch (e) {
@@ -746,6 +751,10 @@ export function JobDetail() {
     [error, setError] = useState(""),
     [reviewError, setReviewError] = useState(""),
     [reviewConflicted, setReviewConflicted] = useState(false),
+    [reviewUncertain, setReviewUncertain] = useState(false),
+    [reviewRecovery, setReviewRecovery] = useState(false),
+    [verifiedReview, setVerifiedReview] = useState<string | null>(null),
+    [checkingReview, setCheckingReview] = useState(false),
     [busy, setBusy] = useState(false),
     t = useText(),
     { user } = useApp(),
@@ -766,26 +775,68 @@ export function JobDetail() {
     initialFields: { reason: "" },
     baseState: { status: job?.status, review_id: job?.review?.id ?? null },
   });
+  const reviewPending = useRef(false);
+  const reviewReceipt = useRef<ReturnType<typeof draft.beginSubmission> | null>(
+    null,
+  );
+  async function checkReview() {
+    const submission = reviewReceipt.current;
+    if (!submission || checkingReview) return;
+    setCheckingReview(true);
+    try {
+      const latest = await api<Job>("/scans/" + id);
+      if (!draft.isCurrentSubmission(submission)) return;
+      requireResourceIdentity(latest);
+      if (latest.review === undefined) throw new APIResponseError();
+      if (latest.review) requireResourceIdentity(latest.review);
+      setVerifiedReview(latest.review?.id ?? null);
+      setReviewUncertain(false);
+      setReviewError("");
+      setRefresh((value) => value + 1);
+    } catch (e) {
+      if (draft.isCurrentSubmission(submission))
+        setReviewError((e as Error).message);
+    } finally {
+      if (draft.isCurrentSubmission(submission)) setCheckingReview(false);
+    }
+  }
   async function requestReview(e: FormEvent) {
     e.preventDefault();
+    if (
+      reviewPending.current ||
+      draft.locked ||
+      reviewUncertain ||
+      job?.review !== null
+    )
+      return;
+    reviewPending.current = true;
     const submission = draft.beginSubmission();
+    reviewReceipt.current = submission;
     setBusy(true);
     setReviewError("");
     try {
       const r = await send(`/scans/${id}/review`, {
         reason: submission.fields.reason,
       });
+      requireResourceIdentity(r);
       if (!draft.markSubmitted(submission)) return;
       navigate("/reviews/" + r.id);
     } catch (e) {
       if (!draft.isCurrentSubmission(submission)) return;
       setReviewError((e as Error).message);
+      if (!(e instanceof APIError) || e.status >= 500) {
+        setReviewUncertain(true);
+        setReviewRecovery(true);
+      }
       if (e instanceof APIError && e.status === 409) {
         setReviewConflicted(true);
         setRefresh((x) => x + 1);
       }
     } finally {
-      if (draft.isCurrentSubmission(submission)) setBusy(false);
+      if (draft.isCurrentSubmission(submission)) {
+        reviewPending.current = false;
+        setBusy(false);
+      }
     }
   }
   return (
@@ -956,8 +1007,8 @@ export function JobDetail() {
                   )}
                 {job.owner_id === user.id &&
                   job.status === "COMPLETED" &&
-                  job.review === null &&
-                  !reviewConflicted && (
+                  ((job.review === null && !reviewConflicted) ||
+                    reviewRecovery) && (
                     <section className="panel form-panel">
                       <h2>{t("검토 요청", "Request review")}</h2>
                       <p>
@@ -966,9 +1017,38 @@ export function JobDetail() {
                           "Provide context and evidence for a reviewer.",
                         )}
                       </p>
+                      <ErrorMessage value={reviewError} />
+                      {reviewRecovery && (
+                        <section className="notice" role="status">
+                          <p>
+                            {reviewUncertain
+                              ? t(
+                                  "접수 여부를 확인하지 못했습니다. 최신 검토를 확인하세요. 입력한 사유는 유지됩니다.",
+                                  "Submission outcome is unknown. Check the latest review. Your reason is retained.",
+                                )
+                              : t(
+                                  "최신 검토를 확인했습니다. 다시 제출하기 전에 결과를 검토하세요.",
+                                  "Latest review checked. Review the result before submitting again.",
+                                )}
+                          </p>
+                          {reviewUncertain && (
+                            <button
+                              type="button"
+                              disabled={checkingReview}
+                              onClick={checkReview}
+                            >
+                              {t("최신 검토 확인", "Check latest review")}
+                            </button>
+                          )}
+                          {verifiedReview && (
+                            <Link to={"/reviews/" + verifiedReview}>
+                              {t("확인된 검토 보기", "View verified review")}
+                            </Link>
+                          )}
+                        </section>
+                      )}
                       <form onSubmit={requestReview}>
                         <fieldset disabled={draft.locked}>
-                          <ErrorMessage value={reviewError} />
                           <label>
                             {t("요청 사유", "Reason")}
                             <textarea
@@ -982,7 +1062,12 @@ export function JobDetail() {
                               required
                             />
                           </label>
-                          <button disabled={busy} className="primary">
+                          <button
+                            disabled={
+                              busy || reviewUncertain || job.review !== null
+                            }
+                            className="primary"
+                          >
                             {t("검토 요청", "Request review")}
                           </button>
                         </fieldset>

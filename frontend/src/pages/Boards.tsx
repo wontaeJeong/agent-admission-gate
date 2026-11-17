@@ -2,14 +2,20 @@ import { useDraft } from "../useDraft";
 import { DraftRecovery } from "../DraftRecovery";
 import { useDirtyForms } from "../DirtyForms";
 import { useAccountMutation } from "../accountMutations";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Link,
   useNavigate,
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { APIError, timestamp } from "../api";
+import {
+  api,
+  APIError,
+  APIResponseError,
+  requireResourceIdentity,
+  timestamp,
+} from "../api";
 import {
   Badge,
   Empty,
@@ -40,7 +46,7 @@ export function Boards() {
     canWrite =
       boards &&
       !!load.data &&
-      !load.error &&
+      (!load.error || load.retryable) &&
       (kind === "voc" || (kind === "notice" ? user.role === "admin" : staff));
   return (
     <>
@@ -88,6 +94,7 @@ export function Boards() {
         <Editor
           key={kind}
           kind={kind}
+          onVerified={load.retry}
           onSave={(p) => navigate("/boards/" + p.id)}
         />
       )}
@@ -238,6 +245,7 @@ function Editor({
   original,
   onSave,
   onConflict,
+  onVerified,
   readVerified = true,
   conflictToken,
 }: {
@@ -245,6 +253,7 @@ function Editor({
   original?: any;
   onSave: (p: any) => void;
   onConflict?: (rejectedRevision: number | null) => void;
+  onVerified?: () => void;
   readVerified?: boolean;
   conflictToken?: object | null;
 }) {
@@ -279,10 +288,44 @@ function Editor({
     baseState: { status: original?.status ?? null },
   });
   const body = String(draft.fields.body);
+  const pending = useRef(false);
+  const receipt = useRef<ReturnType<typeof draft.beginSubmission> | null>(null);
+  const [uncertain, setUncertain] = useState(false),
+    [checking, setChecking] = useState(false),
+    [checked, setChecked] = useState<{ id: string; title: string }[] | null>(
+      null,
+    );
+  async function checkLatest() {
+    const submission = receipt.current;
+    if (!submission || checking) return;
+    setChecking(true);
+    try {
+      const latest = await api(
+        "/boards?kind=" + encodeURIComponent(kind) + "&page=1",
+      );
+      if (!draft.isCurrentSubmission(submission)) return;
+      if (!Array.isArray(latest.items)) throw new APIResponseError();
+      latest.items.forEach(requireResourceIdentity);
+      setChecked(latest.items);
+      // Refresh the current list under the weak receipt guard; keep newer edits.
+      onVerified?.();
+      setUncertain(false);
+      setError("");
+    } catch (e) {
+      if (draft.isCurrentSubmission(submission)) setError((e as Error).message);
+    } finally {
+      if (draft.isCurrentSubmission(submission)) setChecking(false);
+    }
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (pending.current || draft.locked || uncertain) return;
+    pending.current = true;
     const submission = draft.beginSubmission();
+    receipt.current = submission;
     setBusy(true);
+    setError("");
+    setChecked(null);
     try {
       const result = await send(
         original ? "/boards/" + original.id : "/boards",
@@ -297,15 +340,21 @@ function Editor({
         },
         original ? "PUT" : "POST",
       );
+      if (!original) requireResourceIdentity(result);
       if (!draft.markSubmitted(submission)) return;
       onSave(original || result);
     } catch (e) {
       if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
+      if (!original && (!(e instanceof APIError) || e.status >= 500))
+        setUncertain(true);
       if (e instanceof APIError && e.status === 409)
         onConflict?.(submission.baseRevision);
     } finally {
-      if (draft.isCurrentSubmission(submission)) setBusy(false);
+      if (draft.isCurrentSubmission(submission)) {
+        pending.current = false;
+        setBusy(false);
+      }
     }
   }
   return (
@@ -314,6 +363,37 @@ function Editor({
         draft={draft}
         latest={original ? `${original.title}\n${original.body}` : undefined}
       />
+      {uncertain && (
+        <section className="notice" role="status">
+          <p>
+            {t(
+              "저장 여부를 확인하지 못했습니다. 최신 게시글을 확인한 뒤 재제출 여부를 결정하세요.",
+              "Submission outcome is unknown. Check latest posts before deciding whether to submit again.",
+            )}
+          </p>
+          <button type="button" disabled={checking} onClick={checkLatest}>
+            {t("최신 게시글 확인", "Check latest posts")}
+          </button>
+        </section>
+      )}
+      {checked && (
+        <section className="notice" role="status">
+          <p>
+            {t(
+              "최신 게시글을 확인했습니다. 다시 제출하기 전에 목록을 검토하세요.",
+              "Latest posts checked. Review the list before submitting again.",
+            )}
+          </p>
+          {checked.map((post) => (
+            <p key={post.id}>
+              <Link to={"/boards/" + post.id}>{post.title}</Link>
+            </p>
+          ))}
+          <Link to={"/boards?kind=" + encodeURIComponent(kind)}>
+            {t("게시글 목록 보기", "View posts")}
+          </Link>
+        </section>
+      )}
       <form onSubmit={submit}>
         <fieldset disabled={draft.locked}>
           <ErrorMessage value={error} />
@@ -410,7 +490,10 @@ function Editor({
               </label>
             )}
           </div>
-          <button className="primary" disabled={busy || !body.trim()}>
+          <button
+            className="primary"
+            disabled={busy || uncertain || !body.trim()}
+          >
             {t("저장", "Save")}
           </button>
         </fieldset>

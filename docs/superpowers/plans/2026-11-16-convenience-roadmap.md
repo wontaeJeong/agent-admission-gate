@@ -1,8 +1,8 @@
 # Agent Admission Gate 편의기능 실행 플랜
 
-작성일: 2026-11-16 KST · 기준 main: 5ff646d3c0fed462bce5086fcc956caa057749ff · 상태: 구현 전 검토안
+작성일: 2026-11-16 KST · 기준 main: 5ff646d3c0fed462bce5086fcc956caa057749ff · 상태: 14개 기능 PR 병합·최종 검토 수정 추적
 
-앞서 정리한 10개 기능을 5개 작업 묶음과 14개 독립 PR로 구현한다. 이 문서는 구현 순서와 추적표이며 화면·API·권한·데이터의 기준은 [상세 설계안](../specs/2026-11-16-convenience-design.md)이다. 이번 문서 PR은 설계·플랜만 추가하고 제품 코드·설정·스키마를 변경하지 않는다.
+앞서 정리한 10개 기능을 5개 작업 묶음과 14개 독립 PR로 구현한다. 이 문서는 구현 순서와 추적표이며 화면·API·권한·데이터의 기준은 [상세 설계안](../specs/2026-11-16-convenience-design.md)이다. 원래 설계·플랜 제안은 승인된 순서대로 구현됐다. 현재 전달과 전체 검토 수정은 아래와 영구 전달 기록을 따른다.
 
 ## 문서 구성
 
@@ -14,7 +14,7 @@
 | D 만료 알림 | typed 알림·정기 감지·키 교체 준비 | [D 플랜](2026-11-16-convenience-d-expiry.md) |
 | E 검색과 공유 | 발견 링크·읽기용 요약·통합 검색 | [E 플랜](2026-11-16-convenience-e-search-share.md) |
 
-플랜에 나오는 새 파일·API·테스트명은 구현 계약이며 현재 존재하는 기능 목록이 아니다. Alembic revision 파일명만 생성 도구에서 확정하고, 나머지 책임·인터페이스는 각 플랜에 적었다.
+플랜의 파일·API·테스트명은 원래 책임 배분 기록이다. 실제 파일 배분 조정과 완료 근거는 각 플랜과 전달 기록에 명시한다. Alembic revision 파일명만 생성 도구에서 확정하고, 나머지 책임·인터페이스는 각 플랜에 적었다.
 
 ## 구현 순서와 의존성
 
@@ -23,14 +23,14 @@
 | 1 | A1 | 세션 복귀·계정 바인딩 | 없음 | 중 | return_to 검증, 늦은401, 다른 계정 저장 차단 |
 | 2 | A2 | 초안·이탈 보호 | A1 | 중 | 두 dirty 폼, quota, 로그아웃/복구 |
 | 3 | A3 | 목록 복원·저장 보기 | A1 | 중 | query·페이지·스크롤, default 경합 |
-| 4 | B1 | 조건 재사용·동일 커밋 | A1, A2 | 중 | checkout 전 실패 재시도, 소유권, ZIP 재업로드 |
-| 5 | E1 | 발견 링크·요약·인쇄 | A1 | 중 | 중복 fingerprint, API 키 검토 정보 제외 |
+| 4 | B1 (#19) | 조건 재사용·동일 커밋 | A1, A2 | 중 | checkout 전 실패 재시도, 소유권, ZIP 재업로드 |
+| 5 | E1 (#20) | 발견 링크·요약·인쇄 | A1 | 중 | 중복 fingerprint, API 키 검토 정보 제외 |
 | 6 | C1 | 담당자·검토 이력 | A1, A3 | 높음 | claim/결정 경합, reviewer/admin 직교 |
 | 7 | C2 | 철회·보완·알림 | A2, C1 | 높음 | legacy 우회, 판정 불변, 초안 충돌 |
 | 8 | C3 | 수정본의 후속 검토 | B1, C2 | 높음 | lineage, 후속 요청 unique, 승인 비전파 |
 | 9 | B2 | 대상별 검사 이력 | B1, A3 | 중 | 다른 owner 차단, ZIP 계보, 페이지 |
 | 10 | B3 | 결과 비교 | B2 | 높음 | 줄 이동·정책·coverage·suppression 차이 |
-| 11 | E2 | 통합 검색·색인 | E1, C1 | 높음 | 권한 선적용, backfill, cursor, 실제 query plan |
+| 11 | E2 (#26) | 통합 검색·색인 | E1, C1 | 높음 | 권한 선적용, backfill, cursor, 실제 query plan |
 | 12 | D1 | 알림 대상 일반화 | C2 | 높음 | Job 없는 대상, 개수·목록·변경의 같은 권한 |
 | 13 | D2 | 만료 감지·운영 상태 | D1 | 중 | 시간 경계, 중복·중단·대량 후보 |
 | 14 | D3 | 키 교체·예외 재검토 | D1, D2 | 중 | 원문 비저장, 이전 키 유지, 해시 범위 |
@@ -41,25 +41,37 @@
 
 | PR 단위 | 구현 PR | 현재 상태 | 확인된 검증 |
 | --- | --- | --- | --- |
-| A1 로그인 복귀·계정 바인딩 | [PR #16](https://github.com/wontaeJeong/agent-admission-gate/pull/16) | 독립 검토 수정과 필수 CI 5개 job 확인 후 main `bf78cf6`에 병합 | backend 172·migration SQLite/PostgreSQL, frontend build·unit 65·format·전체 browser 50 통과. 임의 발견 화면 선택은 E1에서 완료 |
-| A2 초안·이탈 보호 | [PR #17](https://github.com/wontaeJeong/agent-admission-gate/pull/17) | 검토 I1–I3 수정·로컬 검증 완료 (`209b978`). 수정 후 재검토·최신 head 필수 CI·병합 대기 | unit87·drafts38 포함 전체 browser88·build·format 통과. GET5xx/network 폼 유지, 공지 admin 권한, 늦은 응답 소유권과409 충돌 회귀 확인. PC/모바일 증거13개 |
+| A1 로그인 복귀·계정 바인딩 | [#16](https://github.com/wontaeJeong/agent-admission-gate/pull/16) | 독립 검토·최종 CI 5개 성공 후 bf78cf6 병합 | tested bb6ccc7 · [CI 43902761944](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/43902761944) |
+| A2 초안·이탈 보호 | [#17](https://github.com/wontaeJeong/agent-admission-gate/pull/17) | 독립 검토·최종 CI 5개 성공 후 bb467e5 병합 | tested 3fda6a5 · [CI 44003161915](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44003161915) |
+| A3 목록 복귀·저장된 보기 | [#18](https://github.com/wontaeJeong/agent-admission-gate/pull/18) | 독립 검토·최종 CI 5개 성공 후 c38457b 병합 | tested c2d2e50 · [CI 44011709856](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44011709856) |
+| B1 조건 재사용·동일 커밋 | [#19](https://github.com/wontaeJeong/agent-admission-gate/pull/19) | 독립 검토·최종 CI 5개 성공 후 4847eac 병합 | tested d060b12 · [CI 44016358266](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44016358266) |
+| E1 발견 링크·요약 | [#20](https://github.com/wontaeJeong/agent-admission-gate/pull/20) | 독립 검토·최종 CI 5개 성공 후 bdf902e 병합 | tested c765828 · [CI 44022208395](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44022208395) |
+| C1 담당자·업무 이력 | [#21](https://github.com/wontaeJeong/agent-admission-gate/pull/21) | 독립 검토·최종 CI 5개 성공 후 79def31 병합 | tested 58d907b · [CI 44029730790](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44029730790) |
+| C2 철회·보완 | [#22](https://github.com/wontaeJeong/agent-admission-gate/pull/22) | 독립 검토·최종 CI 5개 성공 후 2b0e6df 병합 | tested e1e5a60 · [CI 44033776611](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44033776611) |
+| C3 수정본 후속 검토 | [#23](https://github.com/wontaeJeong/agent-admission-gate/pull/23) | 독립 검토·최종 CI 5개 성공 후 57fdaf2 병합 | tested 20bce8b · [CI 44038309050](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44038309050) |
+| B2 동일 대상 이력 | [#24](https://github.com/wontaeJeong/agent-admission-gate/pull/24) | 독립 검토·최종 CI 5개 성공 후 9350c98 병합 | tested 4494c0a · [CI 44042767053](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44042767053) |
+| B3 저장 결과 비교 | [#25](https://github.com/wontaeJeong/agent-admission-gate/pull/25) | 독립 검토·최종 CI 5개 성공 후 425e6d4 병합 | tested b2b261c · [CI 44047254634](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44047254634) |
+| E2 권한 범위 통합 검색 | [#26](https://github.com/wontaeJeong/agent-admission-gate/pull/26) | 독립 검토·최종 CI 5개 성공 후 f4dfe7c 병합 | tested d5846d1 · [CI 44053116094](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44053116094) |
+| D1 알림 대상 일반화 | [#27](https://github.com/wontaeJeong/agent-admission-gate/pull/27) | 독립 검토·최종 CI 5개 성공 후 0882fe5 병합 | tested baa70b7 · [CI 44060107884](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44060107884) |
+| D2 만료 감지·운영 상태 | [#28](https://github.com/wontaeJeong/agent-admission-gate/pull/28) | 독립 검토·최종 CI 5개 성공 후 6f84d0b 병합 | tested caec1dc · [CI 44068553899](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44068553899) |
+| D3 키 교체·예외 재검토 | [#29](https://github.com/wontaeJeong/agent-admission-gate/pull/29) | 독립 검토·최종 CI 5개 성공 후 0172837 병합 | tested a3cc0a9 · [CI 44076378186](https://github.com/wontaeJeong/agent-admission-gate/actions/runs/44076378186) |
 
-A1만 병합된 상태다. A2 PR17 초기 head의 필수 CI 5개는 통과했으며, 검토 수정 head의 재검토·필수 CI·병합은 대기 중이다. 이후 PR은 아직 구현 완료로 표시하지 않는다.
+14개 기능 PR #16–#29가 모두 병합됐다. [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)에 정확한 head·CI·실제 로컬 검증·화면·원래 판단 22건과 최종 판단 2건(총 24건)의 비용·6개 Minor를 보존한다. 전체 검토 I1(생성 DTO 누락 복구)/I2(전달 추적)의 최종 수정은 별도 PR의 독립 범위 재검토·정확한 head 필수 CI 성공이 병합 조건이다. 운영 배포·migration·기능 활성화·실제 Cron 완료를 뜻하지 않는다.
 
 ## 10개 기능 추적표
 
 | 기능 | 구현 PR | 사용자가 확인할 결과 |
 | --- | --- | --- |
-| F01 재검사 | B1 | 이전 URL/ref/profile 재입력 없이 latest/snapshot을 구분해 다시 제출 |
-| F02 초안 | A2, C2 | 새로고침·인증 만료·탭 이동 뒤 같은 계정 초안 복구 |
-| F03 목록·저장 보기 | A3, C1 | 같은 조건·페이지·위치로 복귀, 자주 쓰는 보기 저장 |
-| F04 SSO 복귀 | A1, E1 | 로그인 뒤 공유받은 정확한 발견 항목으로 이동 |
-| F05 이력·비교 | B2, B3 | 같은 대상의 변화와 비교 가능한 범위·한계 확인 |
-| F06 담당자 | C1, C2 | 내 담당·미배정·검토 중 상태와 중복 작업 방지 |
-| F07 만료 알림 | D1, D2, D3 | 만료 전 알림에서 실제 키 교체·예외 재검토로 이동 |
-| F08 검색 | E2 | 작업ID·CVE·규칙·경로·검토를 허용된 범위에서 찾기 |
-| F09 공유·요약 | E1 | 발견 직접 링크, 공개 판정 요약 복사·다운로드·인쇄 |
-| F10 검토 흐름 | C2, C3 | 철회·보완·수정본 재요청을 원본 이력과 함께 추적 |
+| F01 재검사 | B1 (#19) | 이전 URL/ref/profile 재입력 없이 latest/snapshot을 구분해 다시 제출 |
+| F02 초안 | A2, C2 (#17, #22) | 새로고침·인증 만료·탭 이동 뒤 같은 계정 초안 복구 |
+| F03 목록·저장 보기 | A3, C1 (#18, #21) | 같은 조건·페이지·위치로 복귀, 자주 쓰는 보기 저장 |
+| F04 SSO 복귀 | A1, E1 (#16, #20) | 로그인 뒤 공유받은 정확한 발견 항목으로 이동 |
+| F05 이력·비교 | B2, B3 (#24, #25) | 같은 대상의 변화와 비교 가능한 범위·한계 확인 |
+| F06 담당자 | C1, C2 (#21, #22) | 내 담당·미배정·검토 중 상태와 중복 작업 방지 |
+| F07 만료 알림 | D1, D2, D3 (#27, #28, #29) | 만료 전 알림에서 실제 키 교체·예외 재검토로 이동 |
+| F08 검색 | E2 (#26) | 작업ID·CVE·규칙·경로·검토를 허용된 범위에서 찾기 |
+| F09 공유·요약 | E1 (#20) | 발견 직접 링크, 공개 판정 요약 복사·다운로드·인쇄 |
+| F10 검토 흐름 | C2, C3 (#22, #23) | 철회·보완·수정본 재요청을 원본 이력과 함께 추적 |
 
 ## 착수 시 확인할 기준
 

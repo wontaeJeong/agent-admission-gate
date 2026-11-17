@@ -1,6 +1,8 @@
 # 만료 알림과 교체 준비 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 현재 요청은 설계·플랜 작성이며 이 문서 자체가 제품 구현 시작 지시는 아니다.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 아래 단계는 원래 구현 계획이며 체크는 2026-11-17의 실제 기능 PR 병합을 반영한다. 운영 배포·활성화 완료 표시는 아니다.
+
+**전달 상태 (2026-11-17):** [D1 · PR #27](https://github.com/wontaeJeong/agent-admission-gate/pull/27), [D2 · PR #28](https://github.com/wontaeJeong/agent-admission-gate/pull/28), [D3 · PR #29](https://github.com/wontaeJeong/agent-admission-gate/pull/29) 병합. 각 최종 head의 독립 검토와 필수 CI 5개 성공을 확인했다. 정확한 head/CI·검증 시점·화면·판단 비용·남은 Minor는 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)을 따른다. 전체 검토 I1/I2의 최종 수정은 별도 PR의 범위 재검토·정확한 head CI가 병합 조건이다.
 
 **Goal:** F07의 키·예외 만료 알림과 실제 관리 화면까지의 동선을 제공한다.
 
@@ -34,12 +36,12 @@
 
 **인터페이스:** emit_resource_notification(s, kind, resource_type, resource_id, recipients, event_key). target visibility/label/href는 registry에서만 만든다. 기존 emit_notification은 scan/review adapter로 유지한다. DTO의 기존 source/href와 새 resource_type/resource_id를 함께 반환한다.
 
-- [ ] **1. 마이그레이션·권한 고정:** test_old_scan_notifications_backfill, test_key_notification_owner_only, test_exception_notification_requires_current_admin_creator, test_count_list_mutation_share_visibility, test_nonjob_notifications_no_fake_job, test_read_all_sequence_preserved를 작성한다.
-- [ ] **2. 실패 확인:** uv run pytest backend/tests/test_notification_targets.py -q.
-- [ ] **3. 데이터·registry 구현:** resource_type/resource_id를 추가하고 job_id를 nullable로 변경한다. scan은resource_id=job_id/review_id 없음, review는resource_id=review_id/job_id 있음, key/exception은job_id/review_id 없음의 CHECK를 둔다. 존재·관계는 생성 시 검증하며 기존 kind/review_id로 backfill한다. credentials/exceptions preference·category를 추가한다.
-- [ ] **4. 공통 조회 구현:** 기존 Job inner join 대신 resource별 EXISTS/union predicate를 사용한다. 목록·unread count·read-all·단건 mutation에 같은 가시성 함수를 적용한다. 과거 알림은 폐기 상태를 표시하며 읽을 수 있지만 대상 소유권·현재 역할은 계속 확인한다. 삭제된 대상은 숨긴다.
-- [ ] **5. 화면·이동 연결:** 키/예외 유형·안전한 이름·현재 상태를 표시한다. /api-keys?key=ID 및 /admin?tab=allowlist&exception=ID에서 해당 항목을 선택하되 권한 확인 전에 데이터를 보여주지 않는다. query가 무효면 일반 목록과 찾을 수 없음 안내를 제공한다.
-- [ ] **6. PR:** SQLite/PostgreSQL migration, 기존 알림 snapshot/race 회귀, target E2E와 계정 전환을 검증한다. 검사/키/예외 혼합 알림의 PC dark/light·모바일 이미지를 포함해 feat: support typed notification resources로 커밋·PR을 만든다.
+- [x] **1. 마이그레이션·권한 고정:** test_old_scan_notifications_backfill, test_key_notification_owner_only, test_exception_notification_requires_current_admin_creator, test_count_list_mutation_share_visibility, test_nonjob_notifications_no_fake_job, test_read_all_sequence_preserved를 작성한다.
+- [x] **2. 실패 확인:** uv run pytest backend/tests/test_notification_targets.py -q.
+- [x] **3. 데이터·registry 구현:** resource_type/resource_id를 추가하고 job_id를 nullable로 변경한다. scan은resource_id=job_id/review_id 없음, review는resource_id=review_id/job_id 있음, key/exception은job_id/review_id 없음의 CHECK를 둔다. 존재·관계는 생성 시 검증하며 기존 kind/review_id로 backfill한다. credentials/exceptions preference·category를 추가한다.
+- [x] **4. 공통 조회 구현:** 기존 Job inner join 대신 resource별 EXISTS/union predicate를 사용한다. 목록·unread count·read-all·단건 mutation에 같은 가시성 함수를 적용한다. 과거 알림은 폐기 상태를 표시하며 읽을 수 있지만 대상 소유권·현재 역할은 계속 확인한다. 삭제된 대상은 숨긴다.
+- [x] **5. 화면·이동 연결:** 키/예외 유형·안전한 이름·현재 상태를 표시한다. /api-keys?key=ID 및 /admin?tab=allowlist&exception=ID에서 해당 항목을 선택하되 권한 확인 전에 데이터를 보여주지 않는다. query가 무효면 일반 목록과 찾을 수 없음 안내를 제공한다.
+- [x] **6. PR:** SQLite/PostgreSQL migration, 기존 알림 snapshot/race 회귀, target E2E와 계정 전환을 검증한다. 검사/키/예외 혼합 알림의 PC dark/light·모바일 이미지를 포함해 feat: support typed notification resources로 커밋·PR을 만든다.
 
 **완료:** F07 기반. 기존 알림 소비자는 source/href를 계속 사용할 수 있다.
 
@@ -53,11 +55,11 @@
 
 **인터페이스:** due_stage(expires_at: float, now: float) -> Literal['7d','1d','expired'] | None. emit_due_expirations(db, *, now, batch_size=500, max_batches=20, dry_run=False) -> ReminderRunResult. CLI aag remind-expirations. 관리자 운영 응답에 마지막 실행 집계만 추가한다.
 
-- [ ] **1. 시각·중복 고정:** test_7d_1d_exact_boundaries, test_expired_24h_cutoff, test_catchup_only_most_urgent, test_two_runs_one_delivery, test_optout_and_revocation_not_candidates, test_later_batches_not_starved, test_dry_run_writes_nothing을 작성한다.
-- [ ] **2. 실패 확인:** uv run pytest backend/tests/test_expiration_reminders.py -q.
-- [ ] **3. 감지 구현:** DB 시각을 한 실행에 고정하고 expires_at/id keyset 및 recipient/event_key anti-join으로 처리한다. 폐기·비활성·수신 거부를 후보 query에서 제외하고, 트랜잭션 안에서 다시 대상·수신자를 검사한다. 삽입 충돌은 중복 발행으로 세지 않는다. --dry-run은 알림·sequence·MaintenanceRun까지 모든 쓰기를 하지 않는다.
-- [ ] **4. 운영 구현:** MaintenanceRun에 실행·성공/실패·집계·안전한 error_code를90일 저장하고 일반 실행에서 만료 이력을 최대1,000개씩 정리한다. 전역 실패는 비정상 exit code, 개별 실패는 건수와 재시도 가능한 대상 상태를 남긴다. CronJob은 기존 이미지·DB secret을 참조하고 Forbid/10분 제한·이력1/3을 설정한다. 감지 활성화 뒤2시간 무성공은 관리자 화면에 지연으로 표시한다.
-- [ ] **5. 검증·PR:**1만 건 초과 synthetic 후보, 작업 겹침·중간 실패·재실행·시간 변경, 옵트아웃을 SQLite/PostgreSQL에서 검증한다. Cron YAML과 dry-run 안내, 만료 알림·운영 지연 이미지를 포함해 feat: emit bounded expiration reminders로 커밋·PR을 만든다.
+- [x] **1. 시각·중복 고정:** test_7d_1d_exact_boundaries, test_expired_24h_cutoff, test_catchup_only_most_urgent, test_two_runs_one_delivery, test_optout_and_revocation_not_candidates, test_later_batches_not_starved, test_dry_run_writes_nothing을 작성한다.
+- [x] **2. 실패 확인:** uv run pytest backend/tests/test_expiration_reminders.py -q.
+- [x] **3. 감지 구현:** DB 시각을 한 실행에 고정하고 expires_at/id keyset 및 recipient/event_key anti-join으로 처리한다. 폐기·비활성·수신 거부를 후보 query에서 제외하고, 트랜잭션 안에서 다시 대상·수신자를 검사한다. 삽입 충돌은 중복 발행으로 세지 않는다. --dry-run은 알림·sequence·MaintenanceRun까지 모든 쓰기를 하지 않는다.
+- [x] **4. 운영 구현:** MaintenanceRun에 실행·성공/실패·집계·안전한 error_code를90일 저장하고 일반 실행에서 만료 이력을 최대1,000개씩 정리한다. 전역 실패는 비정상 exit code, 개별 실패는 건수와 재시도 가능한 대상 상태를 남긴다. CronJob은 기존 이미지·DB secret을 참조하고 Forbid/10분 제한·이력1/3을 설정한다. 감지 활성화 뒤2시간 무성공은 관리자 화면에 지연으로 표시한다.
+- [x] **5. 검증·PR:**1만 건 초과 synthetic 후보, 작업 겹침·중간 실패·재실행·시간 변경, 옵트아웃을 SQLite/PostgreSQL에서 검증한다. Cron YAML과 dry-run 안내, 만료 알림·운영 지연 이미지를 포함해 feat: emit bounded expiration reminders로 커밋·PR을 만든다.
 
 **완료:** F07 자동 감지. 발송 성공·사용자 확인을 혼동하지 않고 in-app 저장 건수로 보고한다.
 
@@ -71,7 +73,7 @@
 
 - [x] **1. 브라우저 실패 사례:** test_replacement_keeps_old_key_active, test_new_key_shown_once_not_in_storage, test_issuance_disabled_not_bypassed, test_old_key_revocation_requires_reason, test_exception_changed_hash_not_reused를 작성하고 미구현 실패를 확인한다.
 - [x] **2. UI 구현:** 새 키 원문을 한 번 보여주고 복사·안전한 저장 안내를 제공한다. 도구 반영 후 사용자가 기존 키 폐기를 별도로 실행하게 한다. 네트워크 오류 시 발급 성공 여부 확인 없이 자동 재발급하지 않는다. 예외는 기존 hash/fingerprint 확인과 해당 소스 재검사·새 예외 검토로 연결한다.
-- [ ] **3. PR:** 기존 발급/폐기 권한 회귀와 key-replacement E2E를 검증한다. 교체 전후·비활성 발급·예외 재검토 이미지를 포함해 feat: guide key replacement and exception revalidation로 커밋·PR을 만든다.
+- [x] **3. PR:** 기존 발급/폐기 권한 회귀와 key-replacement E2E를 검증한다. 교체 전후·비활성 발급·예외 재검토 이미지를 포함해 feat: guide key replacement and exception revalidation로 커밋·PR을 만든다.
 
 **완료:** F07 전체. 자동 연장이나 자동 폐기는 추가하지 않는다.
 
@@ -80,4 +82,6 @@
 
 **D3 구현 결정(2026-11-17):** 기존 /api/api-keys, /api/api-keys/{id}/revoke, /api/admin/allowlist 계약을 재사용하며 새 API·migration을 추가하지 않는다. 준비/발급 전에 auth/config와 auth/me를 조회하고, 준비 시 owner-scoped ?key= 조회를 다시 수행한다. name/scopes만 복사하며 사용자가 선택한 만료 기간은 보존한다. 폼·새 토큰은 메모리에만 두고 계정 generation, form lifetime, 단조 증가 edit version과 submission sequence의 receipt로 늦은 성공의 파괴적 초기화를 차단한다. 이후 작성이 있어도 현재 요청의 busy/error는 약한 receipt 검사로 정리한다. 불명확한 발급·폐기는 GET으로 현재 목록을 확인하기 전 재송신하지 않는다.
 
-예외 DTO에는 원본 job ID가 없으므로 /new에서 수동 소스 선택/파일 업로드를 안내한다. 원래 content_hash/fingerprint를 모두 표시하고 기존 새 예외 폼에 초점만 이동한다. 과거 해시나 추정 검사 계보를 복사하지 않고 작성 중인 입력을 보존한다. 새 해시 등록은 별도 예외 ID이며 기존 예외의 해시·만료를 바꾸지 않는다. 이는 controller가 승인한 기존 API 범위 내 선택이다. 브라우저 근거와 검증 결과는 task-14 보고서에 기록하고 PR 생성·독립 검토·정확한 head CI는 controller가 수행한다.
+예외 DTO에는 원본 job ID가 없으므로 /new에서 수동 소스 선택/파일 업로드를 안내한다. 원래 content_hash/fingerprint를 모두 표시하고 기존 새 예외 폼에 초점만 이동한다. 과거 해시나 추정 검사 계보를 복사하지 않고 작성 중인 입력을 보존한다. 새 해시 등록은 별도 예외 ID이며 기존 예외의 해시·만료를 바꾸지 않는다. 이는 controller가 승인한 기존 API 범위 내 선택이다. 브라우저 근거와 검증 결과는 [전달 기록](../../engineering/2026-11-17-convenience-roadmap-delivery.md)에 기록하고 PR #29는 독립 재검토와 CI 44076378186 필수 5개 성공 후 병합됐다.
+
+D2는 PR #28로 병합됐다. SQLite의 transient WAL/shm 조정 파일 허용, 활성화 기준 설정 비용, 두 DB 검증은 전달 기록 운영 한계와 판단 18–20을 따른다. Cron render만 검증했고 live 실행/flag 활성화는 하지 않았다. D3 메모리 전용 입력과 수동 소스 선택의 비용은 판단 21–22에 남긴다.
