@@ -41,9 +41,10 @@
 
 | PR 단위 | 구현 PR | 현재 상태 | 확인된 검증 |
 | --- | --- | --- | --- |
-| A1 로그인 복귀·계정 바인딩 | [PR #16](https://github.com/wontaeJeong/agent-admission-gate/pull/16) | 구현 및 독립 검토 지적 2건 수정 완료. 수정분 재검토·필수 CI·병합 대기 | 최초 backend 172·migration SQLite/PostgreSQL 통과. 검토 수정 후 frontend build·unit 65·format·전체 browser 50 통과. 임의 발견 화면 선택은 E1에서 완료 |
+| A1 로그인 복귀·계정 바인딩 | [PR #16](https://github.com/wontaeJeong/agent-admission-gate/pull/16) | 독립 검토 수정과 필수 CI 5개 job 확인 후 main `bf78cf6`에 병합 | backend 172·migration SQLite/PostgreSQL, frontend build·unit 65·format·전체 browser 50 통과. 임의 발견 화면 선택은 E1에서 완료 |
+| A2 초안·이탈 보호 | PR 작성 대기 | 구현 및 로컬 검증 완료. 독립 검토·필수 CI·병합 대기 | drafts 15개 포함 unit 80·build·format, drafts 23개 포함 집중 E2E 46·전체 browser 73, docs build 통과. 복구·저장 실패·읽기 전용 충돌 PC/모바일 증거 7개 포함 |
 
-병합 전 상태이며 이후 PR은 아직 구현 완료로 표시하지 않는다. PR #16의 최종 검토·CI 결과와 병합 상태는 실행 담당자가 반영한다.
+A1만 병합된 상태다. A2의 체크는 로컬 구현·검증을 뜻하며, PR 번호와 독립 검토·CI·병합 상태는 실행 담당자가 반영한다. 이후 PR은 아직 구현 완료로 표시하지 않는다.
 
 ## 10개 기능 추적표
 
