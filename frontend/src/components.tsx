@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -9,6 +9,7 @@ import { useText } from "./context";
 
 export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
   const [attempt, setAttempt] = useState(0);
+  const dataPath = useRef(path);
   const [recovery, setRecovery] = useState({
     status: null as number | null,
     retryable: false,
@@ -26,11 +27,16 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
         if (live) {
           setData(value);
           setError("");
+          setRecovery({ status: null, retryable: false });
         }
       } catch (e) {
         if (live && !(e instanceof DOMException && e.name === "AbortError")) {
           setError((e as Error).message);
-          setRecovery(requestRecovery(e, "GET"));
+          const policy = requestRecovery(e, "GET");
+          setRecovery(policy);
+          // Cached authorization is usable through transient reads only. A
+          // denied/unknown response must not reappear while a retry is pending.
+          if (!policy.retryable) setData(null);
         }
       } finally {
         if (live) {
@@ -40,7 +46,10 @@ export function useLoad<T = any>(path: string, refresh = 0, poll = 0) {
       }
     };
     setLoading(true);
-    setData(null);
+    if (dataPath.current !== path) {
+      setData(null);
+      dataPath.current = path;
+    }
     setError("");
     setRecovery({ status: null, retryable: false });
     void run();
@@ -110,20 +119,31 @@ export function ReadError({
 }
 export function State({
   loading,
+  preserveContent = false,
   children,
   ...failure
 }: ReadFailureProps & {
   loading?: boolean;
+  preserveContent?: boolean;
   children: ReactNode;
 }) {
   const t = useText();
-  if (loading)
+  const pending = (
+    <div className="state" role="status">
+      <LoaderCircle className="spin" />
+      {t("불러오는 중…", "Loading…")}
+    </div>
+  );
+  // Keep the same child positions and instances while showing read recovery.
+  if (preserveContent)
     return (
-      <div className="state" role="status">
-        <LoaderCircle className="spin" />
-        {t("불러오는 중…", "Loading…")}
-      </div>
+      <>
+        {loading && pending}
+        <ReadError {...failure} />
+        {children}
+      </>
     );
+  if (loading) return pending;
   if (failure.error) return <ReadError {...failure} />;
   return <>{children}</>;
 }

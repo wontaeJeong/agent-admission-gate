@@ -40,7 +40,7 @@
 - [x] **5. race 검증:** test_old_account_mutation_rejected는 오래된 계정 헤더+새 쿠키의 재검사/코멘트/게시글/키 발급이409이고 DB 변경0건임을 확인한다. E2E로 발견 링크→SSO 모의 callback→같은 항목, 두 탭 계정 전환, 중복401 안내 한 번,403/503에서 로그아웃 없음을 확인한다.
 - [x] **6. PR:** 대상 pytest·returnPaths 단위·frontend build·session-return E2E·migration round trip을 통과시킨다. 복귀·만료 안내 PC/모바일 이미지와 함께 feat: preserve return destination and bind submissions to account로 커밋·PR을 만든다.
 
-검증 기록: `backend/tests/test_return_paths.py`, `test_session_return.py`, `test_account_bound_mutations.py`, `frontend/src/session.test.ts`, `returnPaths.test.ts`, `frontend/e2e/session-return.spec.ts`. A1은 발견 query를 포함한 정확한 복귀 URL과 현재 허용된 결과 내용을 검증한다. 임의 finding/occurrence의 화면 선택은 E1 범위이며 F04 전체 완료를 앞당겨 주장하지 않는다. [PR #16](https://github.com/wontaeJeong/agent-admission-gate/pull/16)에 구현과 독립 검토 수정 커밋 `3a929f7`을 반영할 준비를 마쳤다. 이 체크는 로컬 검증과 PR 작성을 뜻하며, 수정분 재검토·필수 CI·병합은 실행 담당자의 확인을 기다린다.
+검증 기록: `backend/tests/test_return_paths.py`, `test_session_return.py`, `test_account_bound_mutations.py`, `frontend/src/session.test.ts`, `returnPaths.test.ts`, `frontend/e2e/session-return.spec.ts`. A1은 발견 query를 포함한 정확한 복귀 URL과 현재 허용된 결과 내용을 검증한다. 임의 finding/occurrence의 화면 선택은 E1 범위이며 F04 전체 완료를 앞당겨 주장하지 않는다. [PR #16](https://github.com/wontaeJeong/agent-admission-gate/pull/16)은 필수 CI 5개 job과 독립 검토 수정 확인 후 main `bf78cf6`에 병합됐다. 최종 A1 검증은 backend 172, frontend unit 65, 전체 browser 50, SQLite/PostgreSQL migration이다.
 
 **완료:** F04의 로그인 복귀 기반. 후속 작업은 sendAsAccount와 SessionCoordinator의 flush/generation을 사용한다.
 
@@ -50,14 +50,16 @@
 
 **생성 파일:** frontend/src/drafts.ts, frontend/src/useDraft.ts, frontend/src/DirtyForms.tsx, frontend/src/DraftRecovery.tsx, frontend/src/drafts.test.ts; frontend/e2e/drafts.spec.ts.
 
-**인터페이스:** DraftKind는 scan_new/review_request/review_decision/scan_comment/board_post다. DraftEnvelope<T>는 schema_version/account_id/kind/target_id/base_revision/base_state/saved_at/fields를 가진다. base_revision은 nullable이고 C1 전에는 base_state(status/decided_at/review_id)와 최신 GET으로 충돌을 검사한다. readDraft(key, now), writeDraft(key, envelope, now), clearDraft(key), clearAccountDrafts(accountId)를 제공한다. useDraft는 복구 후보·dirty·flush·discard·markSubmitted를 반환한다. DirtyFormsProvider가 여러 폼을 등록받아 useBlocker를 한 번만 호출한다.
+**인터페이스:** DraftKind는 scan_new/review_request/review_decision/scan_comment/board_post다. DraftEnvelope<T>는 schema_version/account_id/kind/target_id/base_revision/base_state/saved_at/fields를 가진다. base_revision은 nullable이고 C1 전에는 base_state(status/decided_at/review_id)와 최신 GET으로 충돌을 검사한다. readDraft(key, now), writeDraft(key, envelope, now), clearDraft(key), clearAccountDrafts(accountId)를 제공한다. useDraft는 복구 후보·dirty·flush·discard와 beginSubmission/isCurrentSubmission/markSubmitted(receipt)를 반환한다. 성공 후 초기화·닫기·새로고침·이동은 현재 폼 수명·tuple 소유권·제출 순서·입력 버전을 확인한 markSubmitted가 true일 때만 수행한다. DirtyFormsProvider가 여러 폼을 등록받아 useBlocker를 한 번만 호출한다.
 
-- [ ] **1. 저장소 사례 고정:** fake Storage와 고정 now로24시간 경계,21번째 초안의 오래된 순 제거,256KiB 초과, schema 불일치, 같은 계정의 다른 target 분리, PAT/token/file 필드 제외를 확인한다.
-- [ ] **2. 실패 확인:** cd frontend && npm test -- drafts.test.ts. 미구현으로 실패하는지 확인한다.
-- [ ] **3. 저장과 라우터 구현:** kind별 필드 allowlist로300ms 저장하고 pagehide 등에서 동기 flush한다. main.tsx를 createBrowserRouter/RouterProvider 단일 root로 바꾸되 App의 경로를 유지한다. 하나의 DirtyFormsProvider에 모든 dirty 폼을 등록한다. SSO 전에는 A1 flush, hard reload에는 beforeunload를 적용한다.
-- [ ] **4. 폼 연결:** 최초 GET과 권한 확인 뒤 복구 후보를 보여주고 명시적 복구 없이 서버 값을 덮어쓰지 않는다. 검토 revision, 내부 코멘트 자격, 게시판 flag/revision을 재확인한다. 성공한 폼의 초안만 제거하고 로그아웃 뒤 cleanup의 재저장은 generation으로 차단한다.
-- [ ] **5. 브라우저 검증:** test_two_dirty_forms_preserved에서 결정 사유·코멘트를 모두 작성하고 이탈 취소/진행을 확인한다. test_account_switch_never_restores_foreign_draft, test_storage_error_is_visible, test_decided_review_preserves_readonly_draft, test_tab_change_flushes를 추가한다. PAT와 ZIP이 복구 대상이 아님을 확인한다.
-- [ ] **6. PR:** drafts 단위·build·drafts E2E·기존 account/review E2E를 통과시킨다. 복구·저장 실패·충돌 PC/모바일 이미지와 함께 feat: retain account scoped form drafts로 커밋·PR을 만든다.
+- [x] **1. 저장소 사례 고정:** fake Storage와 고정 now로24시간 경계,21번째 초안의 오래된 순 제거,256KiB 초과, schema 불일치, 같은 계정의 다른 target 분리, PAT/token/file 필드 제외를 확인한다.
+- [x] **2. 실패 확인:** cd frontend && npm test -- drafts.test.ts. 미구현으로 실패하는지 확인한다.
+- [x] **3. 저장과 라우터 구현:** kind별 필드 allowlist로300ms 저장하고 pagehide 등에서 동기 flush한다. main.tsx를 createBrowserRouter/RouterProvider 단일 root로 바꾸되 App의 경로를 유지한다. 하나의 DirtyFormsProvider에 모든 dirty 폼을 등록한다. SSO 전에는 A1 flush, hard reload에는 beforeunload를 적용한다.
+- [x] **4. 폼 연결:** 최초 GET과 권한 확인 뒤 복구 후보를 보여주고 명시적 복구 없이 서버 값을 덮어쓰지 않는다. 검토 revision, 내부 코멘트 자격, 게시판 flag/revision을 재확인한다. 성공한 폼의 초안만 제거하고 로그아웃 뒤 cleanup의 재저장은 generation으로 차단한다.
+- [x] **5. 브라우저 검증:** test_two_dirty_forms_preserved에서 결정 사유·코멘트를 모두 작성하고 이탈 취소/진행을 확인한다. test_account_switch_never_restores_foreign_draft, test_storage_error_is_visible, test_decided_review_preserves_readonly_draft, test_tab_change_flushes를 추가한다. PAT와 ZIP이 복구 대상이 아님을 확인한다.
+- [x] **6. PR 작성·로컬 검증:** drafts 단위·build·drafts E2E·기존 account/review E2E를 통과하고 화면 증거와 함께 [PR #17](https://github.com/wontaeJeong/agent-admission-gate/pull/17)을 작성했다. 수정 후 독립 재검토·최신 head 필수 CI·병합은 대기 중이다.
+
+검증 기록: 초기 구현은 unit80·집중 E2E46·전체 browser73·build·format·docs build를 통과했다. PR17 초기 head `75435fb`의 필수 CI 5개 통과는 실행 담당자가 확인했다. 검토 수정 `209b978`은 frontend unit87개, drafts38개를 포함한 전체 browser88개, build·format을 통과했다. `frontend/src/drafts.test.ts`, `frontend/src/session.test.ts`, `frontend/e2e/drafts.spec.ts`가 저장·복구와 수정 회귀를 검증한다. 두 dirty 폼은 단일 blocker를 사용하며, target 변경은 폼을 다시 마운트한다. 같은 계정 만료는 초안을 유지하고 명시적 로그아웃·다른 계정 관찰은 정리한다. 저장 불가 시 입력을 유지하고 오류를 표시하며 인증 정보·query·fragment가 포함된 URL은 저장에서 제외한다. 권한을 확인한 같은 target의 GET5xx/network 실패와 재시도는 기존 폼·입력·초점을 유지하며 오류를 함께 표시한다. 401/403/404는 캐시를 제거한다. mutation409는 캐시보다 우선하며 검토 사유를 읽기 전용으로 유지한다. 게시글 충돌은 거절된 revision보다 새 revision을 확인하고 명시적으로 재편집/버리기 전까지 제출을 막는다. 공지 수정은 작성자 여부와 관계없이 현재 admin만 가능하다. 이전 폼의 늦은 응답은 새 초안을 지우거나 페이지를 이동하지 않는다. 화면 증거13개: `docs/engineering/screenshots/convenience-a2/`. 복구 desktop dark/light·mobile, 저장 실패·읽기 전용 충돌·polling 오류 중 폼 유지·공지 권한 상실 desktop/mobile을 확인했으며 모바일 가로 넘침이 없다. PR17 수정 후 재검토·최신 head 필수 CI·병합은 대기 중이다.
 
 **완료:** F02. C2에서 새 검토 상태의 복구 허용 여부를 추가한다.
 

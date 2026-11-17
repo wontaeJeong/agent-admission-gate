@@ -15,7 +15,9 @@ export function requestRecovery(error: unknown, method: string) {
     retryable:
       method.toUpperCase() === "GET" &&
       (error instanceof TypeError ||
-        (error instanceof APIError && error.status === 503)),
+        (error instanceof APIError &&
+          error.status >= 500 &&
+          error.status < 600)),
   };
 }
 export async function api<T = any>(

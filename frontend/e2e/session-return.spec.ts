@@ -48,81 +48,24 @@ test("expired requests show one reauthentication notice and retain destination",
 });
 
 // A separate OIDC app keeps provider fixtures outside production and the local-login suite.
-import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
-
+import { startOidcFixture } from "./oidcFixture";
 const root = resolve(import.meta.dirname, "../..");
 const evidence =
   process.env.AAG_CAPTURE_EVIDENCE === "1"
     ? resolve(root, "docs/engineering/screenshots/convenience-a1")
     : resolve(root, "frontend/test-results/convenience-a1");
-let providerApp: ChildProcess;
+let provider: Awaited<ReturnType<typeof startOidcFixture>>;
 let oidcOrigin: string;
-let fixtureDirectory: string;
-
-// Only this synthetic provider uses an ephemeral self-signed loopback certificate.
 test.use({ ignoreHTTPSErrors: true });
-
 test.beforeAll(async () => {
-  const socket = createServer();
-  await new Promise<void>((done) => socket.listen(0, "127.0.0.1", done));
-  const address = socket.address();
-  if (!address || typeof address === "string")
-    throw new Error("No fixture port");
-  const port = address.port;
-  await new Promise<void>((done, reject) =>
-    socket.close((error) => (error ? reject(error) : done())),
-  );
-  oidcOrigin = `http://localhost:${port}`;
-  fixtureDirectory = mkdtempSync(resolve(tmpdir(), "aag-oidc-browser-"));
-  providerApp = spawn(
-    resolve(root, ".venv/bin/python"),
-    [
-      "-m",
-      "uvicorn",
-      "frontend.e2e.oidc_app:app",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--no-access-log",
-    ],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        PATH: `${root}/.venv/bin:/usr/bin:/bin`,
-        AAG_PUBLIC_URL: oidcOrigin,
-        AAG_DATABASE_URL: `sqlite:///${fixtureDirectory}/fixture.db`,
-        AAG_OIDC_FIXTURE_DIR: fixtureDirectory,
-      },
-      stdio: "ignore",
-    },
-  );
-  await expect
-    .poll(
-      async () => {
-        try {
-          return (await fetch(`${oidcOrigin}/health/ready`)).status;
-        } catch {
-          return 0;
-        }
-      },
-      { timeout: 15000 },
-    )
-    .toBe(200);
+  provider = await startOidcFixture();
+  oidcOrigin = provider.origin;
   mkdirSync(evidence, { recursive: true });
 });
 test.afterAll(async () => {
-  if (providerApp && providerApp.exitCode === null) {
-    providerApp.kill("SIGTERM");
-    await new Promise<void>((done) => providerApp.once("exit", () => done()));
-  }
-  if (fixtureDirectory)
-    rmSync(fixtureDirectory, { recursive: true, force: true });
+  if (provider) await provider.stop();
 });
 
 const findingPath =

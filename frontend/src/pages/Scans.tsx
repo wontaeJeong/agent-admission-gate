@@ -1,3 +1,6 @@
+import { useDraft } from "../useDraft";
+import { DraftRecovery } from "../DraftRecovery";
+import { useDirtyForms } from "../DirtyForms";
 import { useAccountMutation } from "../accountMutations";
 import { useState, type FormEvent } from "react";
 import {
@@ -226,11 +229,25 @@ export function NewScan() {
   const send = useAccountMutation();
   const t = useText(),
     navigate = useNavigate();
-  const [type, setType] = useState("git"),
-    [error, setError] = useState(""),
+  const draft = useDraft({
+    kind: "scan_new",
+    targetId: "new",
+    enabled: true,
+    initialFields: {
+      type: "git",
+      url: "",
+      ref: "",
+      profile: "static",
+      force: false,
+    },
+  });
+  const { confirmLeave } = useDirtyForms();
+  const type = String(draft.fields.type);
+  const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     const form = e.currentTarget,
       data = new FormData(form);
     setBusy(true);
@@ -252,11 +269,13 @@ export function NewScan() {
         data.set("force_rescan", String(data.has("force")));
         result = await send("/scans/upload", data);
       }
+      if (!draft.markSubmitted(submission)) return;
       navigate("/jobs/" + result.id);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
@@ -277,114 +296,150 @@ export function NewScan() {
               ["upload", t("파일 업로드", "Upload package")],
             ]}
             selected={type}
-            onChange={setType}
+            onChange={(value) => {
+              if (confirmLeave()) draft.update("type", value);
+            }}
           />
+          <DraftRecovery draft={draft} />
+          <p className="muted">
+            {t(
+              "PAT와 ZIP 파일은 임시저장하지 않습니다. 복구 후 다시 입력하거나 선택하세요.",
+              "PATs and ZIP files are not saved. Re-enter or select them after recovery.",
+            )}
+          </p>
           <form onSubmit={submit}>
-            <ErrorMessage value={error} />
-            {type === "git" ? (
-              <>
-                <label>
-                  {t("저장소 URL", "Repository URL")}
-                  <input
-                    name="url"
-                    type="url"
-                    placeholder="https://github.com/owner/repository"
-                    required
-                    autoComplete="off"
-                  />
-                </label>
-                <label>
-                  {t("브랜치 또는 태그", "Branch or tag")}
-                  <input
-                    name="ref"
-                    placeholder={t(
-                      "비워두면 기본 브랜치",
-                      "Default branch when empty",
-                    )}
-                  />
-                </label>
-                <details>
-                  <summary>
-                    {t("비공개 저장소 인증", "Private repository credentials")}
-                  </summary>
+            <fieldset disabled={draft.locked}>
+              <ErrorMessage value={error} />
+              {type === "git" ? (
+                <>
                   <label>
-                    Personal access token
+                    {t("저장소 URL", "Repository URL")}
                     <input
-                      name="credential"
-                      type="password"
+                      name="url"
+                      value={String(draft.fields.url)}
+                      onChange={(e) => draft.update("url", e.target.value)}
+                      type="url"
+                      placeholder="https://github.com/owner/repository"
+                      required
                       autoComplete="off"
                     />
                   </label>
-                  <small>
+                  <label>
+                    {t("브랜치 또는 태그", "Branch or tag")}
+                    <input
+                      name="ref"
+                      value={String(draft.fields.ref)}
+                      onChange={(e) => draft.update("ref", e.target.value)}
+                      placeholder={t(
+                        "비워두면 기본 브랜치",
+                        "Default branch when empty",
+                      )}
+                    />
+                  </label>
+                  <details>
+                    <summary>
+                      {t(
+                        "비공개 저장소 인증",
+                        "Private repository credentials",
+                      )}
+                    </summary>
+                    <label>
+                      Personal access token
+                      <input
+                        name="credential"
+                        onChange={draft.touch}
+                        type="password"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <small>
+                      {t(
+                        "클론 과정에서만 메모리로 전달하고 저장하지 않습니다.",
+                        "Used in memory only for cloning; never persisted.",
+                      )}
+                    </small>
+                  </details>
+                </>
+              ) : (
+                <label className="upload-zone">
+                  <Upload size={26} />
+                  <strong>
+                    {t("ZIP 패키지 선택", "Choose a ZIP package")}
+                  </strong>
+                  <span>
                     {t(
-                      "클론 과정에서만 메모리로 전달하고 저장하지 않습니다.",
-                      "Used in memory only for cloning; never persisted.",
+                      "최대 20 MB · 압축 해제 후 최대 100 MB",
+                      "Up to 20 MB · 100 MB extracted",
                     )}
-                  </small>
-                </details>
-              </>
-            ) : (
-              <label className="upload-zone">
-                <Upload size={26} />
-                <strong>{t("ZIP 패키지 선택", "Choose a ZIP package")}</strong>
-                <span>
-                  {t(
-                    "최대 20 MB · 압축 해제 후 최대 100 MB",
-                    "Up to 20 MB · 100 MB extracted",
-                  )}
-                </span>
+                  </span>
+                  <input
+                    name="file"
+                    onChange={draft.touch}
+                    type="file"
+                    accept=".zip,application/zip"
+                    required
+                  />
+                </label>
+              )}
+              <fieldset>
+                <legend>{t("검사 프로필", "Scan profile")}</legend>
+                <label className="radio-card">
+                  <input
+                    name="profile"
+                    type="radio"
+                    value="static"
+                    checked={draft.fields.profile === "static"}
+                    onChange={() => draft.update("profile", "static")}
+                  />
+                  <span>
+                    <b>Static</b>
+                    <small>
+                      {t(
+                        "소스 규칙 · 감지된 Skill/MCP 메타데이터 검사",
+                        "Source rules and detected Skill/MCP metadata",
+                      )}
+                    </small>
+                  </span>
+                </label>
+                <label className="radio-card">
+                  <input
+                    name="profile"
+                    type="radio"
+                    value="full"
+                    checked={draft.fields.profile === "full"}
+                    onChange={() => draft.update("profile", "full")}
+                  />
+                  <span>
+                    <b>Full</b>
+                    <small>
+                      {t(
+                        "Static + SBOM · 취약점 · 라이선스 · 모델 보조 판단",
+                        "Static + SBOM, vulnerabilities, licenses and model advice",
+                      )}
+                    </small>
+                  </span>
+                </label>
+              </fieldset>
+              <label className="check">
                 <input
-                  name="file"
-                  type="file"
-                  accept=".zip,application/zip"
-                  required
+                  type="checkbox"
+                  name="force"
+                  checked={!!draft.fields.force}
+                  onChange={(e) => draft.update("force", e.target.checked)}
                 />
+                {t("기존 캐시를 사용하지 않고 다시 검사", "Force a fresh scan")}
               </label>
-            )}
-            <fieldset>
-              <legend>{t("검사 프로필", "Scan profile")}</legend>
-              <label className="radio-card">
-                <input
-                  name="profile"
-                  type="radio"
-                  value="static"
-                  defaultChecked
-                />
-                <span>
-                  <b>Static</b>
-                  <small>
-                    {t(
-                      "소스 규칙 · 감지된 Skill/MCP 메타데이터 검사",
-                      "Source rules and detected Skill/MCP metadata",
-                    )}
-                  </small>
-                </span>
-              </label>
-              <label className="radio-card">
-                <input name="profile" type="radio" value="full" />
-                <span>
-                  <b>Full</b>
-                  <small>
-                    {t(
-                      "Static + SBOM · 취약점 · 라이선스 · 모델 보조 판단",
-                      "Static + SBOM, vulnerabilities, licenses and model advice",
-                    )}
-                  </small>
-                </span>
-              </label>
+              <button className="primary" disabled={busy}>
+                {busy
+                  ? t("접수 중…", "Submitting…")
+                  : t("검사 실행", "Run scan")}
+              </button>
             </fieldset>
-            <label className="check">
-              <input type="checkbox" name="force" />
-              {t("기존 캐시를 사용하지 않고 다시 검사", "Force a fresh scan")}
-            </label>
-            <button className="primary" disabled={busy}>
-              {busy ? t("접수 중…", "Submitting…") : t("검사 실행", "Run scan")}
-            </button>
           </form>
         </section>
         <aside className="help-panel">
           <ShieldCheck size={26} />
-          <h2>{t("판정은 근거에서 시작합니다", "Evidence comes first")}</h2>
+          <h2>{t("검사 결과 적용 범위", "Scan result scope")}</h2>
           <p>
             {t(
               "검사 결과는 선택한 프로필과 소스 시점에만 적용됩니다. 필요한 엔진이 없거나 실패하면 검토 대상으로 남습니다.",
@@ -422,7 +477,7 @@ export function JobDetail() {
     [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
     [reviewError, setReviewError] = useState(""),
-    [reason, setReason] = useState(""),
+    [reviewConflicted, setReviewConflicted] = useState(false),
     [busy, setBusy] = useState(false),
     t = useText(),
     { user } = useApp(),
@@ -430,18 +485,39 @@ export function JobDetail() {
   const load = useLoad<Job>("/scans/" + id, refresh, 4000),
     job = load.data,
     tab = params.get("tab") || "admission";
+  const draft = useDraft({
+    kind: "review_request",
+    targetId: id!,
+    enabled:
+      !!job &&
+      (!load.error || load.retryable) &&
+      job.owner_id === user.id &&
+      job.review !== undefined,
+    writable:
+      !reviewConflicted && job?.status === "COMPLETED" && job?.review === null,
+    initialFields: { reason: "" },
+    baseState: { status: job?.status, review_id: job?.review?.id ?? null },
+  });
   async function requestReview(e: FormEvent) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     setBusy(true);
     setReviewError("");
     try {
-      const r = await send(`/scans/${id}/review`, { reason });
+      const r = await send(`/scans/${id}/review`, {
+        reason: submission.fields.reason,
+      });
+      if (!draft.markSubmitted(submission)) return;
       navigate("/reviews/" + r.id);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setReviewError((e as Error).message);
-      if (e instanceof APIError && e.status === 409) setRefresh((x) => x + 1);
+      if (e instanceof APIError && e.status === 409) {
+        setReviewConflicted(true);
+        setRefresh((x) => x + 1);
+      }
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
@@ -450,7 +526,10 @@ export function JobDetail() {
         <ArrowLeft size={15} />
         {t("작업 목록", "Scans")}
       </Link>
-      <State {...load}>
+      <State
+        {...load}
+        preserveContent={!!job && (!load.error || load.retryable)}
+      >
         {job && (
           <>
             <PageTitle
@@ -517,6 +596,7 @@ export function JobDetail() {
             />
             {tab === "admission" && (
               <>
+                <DraftRecovery draft={draft} />
                 <Admission job={job} />
                 {job.review && (
                   <section
@@ -552,7 +632,8 @@ export function JobDetail() {
                   )}
                 {job.owner_id === user.id &&
                   job.status === "COMPLETED" &&
-                  job.review === null && (
+                  job.review === null &&
+                  !reviewConflicted && (
                     <section className="panel form-panel">
                       <h2>{t("검토 요청", "Request review")}</h2>
                       <p>
@@ -562,20 +643,25 @@ export function JobDetail() {
                         )}
                       </p>
                       <form onSubmit={requestReview}>
-                        <ErrorMessage value={reviewError} />
-                        <label>
-                          {t("요청 사유", "Reason")}
-                          <textarea
-                            value={reason}
-                            onChange={(e) => setReason(e.target.value)}
-                            minLength={5}
-                            maxLength={4000}
-                            required
-                          />
-                        </label>
-                        <button disabled={busy} className="primary">
-                          {t("검토 요청", "Request review")}
-                        </button>
+                        <fieldset disabled={draft.locked}>
+                          <ErrorMessage value={reviewError} />
+                          <label>
+                            {t("요청 사유", "Reason")}
+                            <textarea
+                              aria-label={t("요청 사유", "Reason")}
+                              value={String(draft.fields.reason)}
+                              onChange={(e) =>
+                                draft.update("reason", e.target.value)
+                              }
+                              minLength={5}
+                              maxLength={4000}
+                              required
+                            />
+                          </label>
+                          <button disabled={busy} className="primary">
+                            {t("검토 요청", "Request review")}
+                          </button>
+                        </fieldset>
                       </form>
                     </section>
                   )}
@@ -898,27 +984,39 @@ export function Comments({ endpoint }: { endpoint: string }) {
     load = useLoad(endpoint, refresh),
     { user } = useApp(),
     t = useText();
+  const draft = useDraft({
+    kind: "scan_comment",
+    targetId: endpoint,
+    enabled: load.data !== null && (!load.error || load.retryable),
+    initialFields: { body: "", internal: false },
+    allowCandidate: (candidate) =>
+      !candidate.fields.internal || user.role === "admin" || user.reviewer,
+  });
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = e.currentTarget,
-      data = new FormData(form);
+    const submission = draft.beginSubmission();
     setBusy(true);
     try {
       await send(endpoint, {
-        body: data.get("body"),
-        internal: data.has("internal"),
+        body: submission.fields.body,
+        internal: submission.fields.internal,
       });
-      form.reset();
+      if (!draft.markSubmitted(submission)) return;
+      draft.discard();
       setRefresh((x) => x + 1);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
     <section className="panel comments">
-      <State {...load}>
+      <State
+        {...load}
+        preserveContent={load.data !== null && (!load.error || load.retryable)}
+      >
         {load.data?.length ? (
           load.data.map((c: any) => (
             <article key={c.id}>
@@ -936,29 +1034,44 @@ export function Comments({ endpoint }: { endpoint: string }) {
           </Empty>
         )}
       </State>
+      <DraftRecovery draft={draft} />
       <form onSubmit={submit}>
-        <ErrorMessage value={error} />
-        <label>
-          {t("코멘트", "Comment")}
-          <textarea
-            name="body"
-            required
-            maxLength={20000}
-            placeholder={t(
-              "Markdown으로 작성할 수 있습니다.",
-              "Markdown supported.",
-            )}
-          />
-        </label>
-        {(user.role === "admin" || user.reviewer) && (
-          <label className="check">
-            <input name="internal" type="checkbox" />
-            {t("내부 검토자에게만 공개", "Staff only")}
+        <fieldset
+          disabled={
+            draft.locked || !load.data || (!!load.error && !load.retryable)
+          }
+        >
+          <ErrorMessage value={error} />
+          <label>
+            {t("코멘트", "Comment")}
+            <textarea
+              name="body"
+              aria-label={t("코멘트", "Comment")}
+              value={String(draft.fields.body)}
+              onChange={(e) => draft.update("body", e.target.value)}
+              required
+              maxLength={20000}
+              placeholder={t(
+                "Markdown으로 작성할 수 있습니다.",
+                "Markdown supported.",
+              )}
+            />
           </label>
-        )}
-        <button className="primary" disabled={busy}>
-          {t("등록", "Post comment")}
-        </button>
+          {(user.role === "admin" || user.reviewer) && (
+            <label className="check">
+              <input
+                name="internal"
+                type="checkbox"
+                checked={!!draft.fields.internal}
+                onChange={(e) => draft.update("internal", e.target.checked)}
+              />
+              {t("내부 검토자에게만 공개", "Staff only")}
+            </label>
+          )}
+          <button className="primary" disabled={busy}>
+            {t("등록", "Post comment")}
+          </button>
+        </fieldset>
       </form>
     </section>
   );

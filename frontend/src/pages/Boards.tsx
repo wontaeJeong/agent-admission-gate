@@ -1,12 +1,15 @@
+import { useDraft } from "../useDraft";
+import { DraftRecovery } from "../DraftRecovery";
+import { useDirtyForms } from "../DirtyForms";
 import { useAccountMutation } from "../accountMutations";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Link,
   useNavigate,
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { timestamp } from "../api";
+import { APIError, timestamp } from "../api";
 import {
   Badge,
   Empty,
@@ -25,15 +28,20 @@ export function Boards() {
     [writing, setWriting] = useState(false),
     kind = params.get("kind") || "notice",
     page = Number(params.get("page") || 1),
-    { user } = useApp(),
+    { user, boards } = useApp(),
     t = useText(),
     load = useLoad(
       `/boards?kind=${kind}&page=${page}&q=${encodeURIComponent(params.get("q") || "")}`,
     ),
     navigate = useNavigate();
+  const { confirmLeave } = useDirtyForms();
+  useEffect(() => setWriting(false), [kind]);
   const staff = user.reviewer || user.role === "admin",
     canWrite =
-      kind === "voc" || (kind === "notice" ? user.role === "admin" : staff);
+      boards &&
+      !!load.data &&
+      !load.error &&
+      (kind === "voc" || (kind === "notice" ? user.role === "admin" : staff));
   return (
     <>
       <PageTitle
@@ -45,7 +53,12 @@ export function Boards() {
         )}
         actions={
           canWrite && (
-            <button className="primary" onClick={() => setWriting(!writing)}>
+            <button
+              className="primary"
+              onClick={() => {
+                if (confirmLeave()) setWriting(!writing);
+              }}
+            >
               {writing
                 ? t("작성 닫기", "Close editor")
                 : t("글 작성", "Write a post")}
@@ -68,12 +81,15 @@ export function Boards() {
         ]}
         selected={kind}
         onChange={(v) => {
-          setWriting(false);
           setParams({ kind: v });
         }}
       />
-      {writing && (
-        <Editor kind={kind} onSave={(p) => navigate("/boards/" + p.id)} />
+      {writing && canWrite && (
+        <Editor
+          key={kind}
+          kind={kind}
+          onSave={(p) => navigate("/boards/" + p.id)}
+        />
       )}
       <div className="filters">
         <input
@@ -124,14 +140,29 @@ export function PostDetail() {
   const { id } = useParams(),
     [refresh, setRefresh] = useState(0),
     [edit, setEdit] = useState(false),
-    load = useLoad("/boards/" + id, refresh),
+    [conflictSnapshot, setConflictSnapshot] = useState<{
+      revision: number | null;
+    } | null>(null),
+    load = useLoad("/boards/" + id, refresh, 4000),
     { user } = useApp(),
     t = useText(),
     post = load.data,
     [error, setError] = useState(""),
     [read, setRead] = useState(false);
+  const { confirmLeave } = useDirtyForms();
+  const staff = user.role === "admin" || user.reviewer;
+  const canEdit =
+    post &&
+    (post.kind === "notice"
+      ? user.role === "admin"
+      : post.kind === "internal"
+        ? staff
+        : post.author_id === user.id || staff);
   return (
-    <State {...load}>
+    <State
+      {...load}
+      preserveContent={!!post && (!load.error || load.retryable)}
+    >
       {post && (
         <>
           <PageTitle
@@ -139,21 +170,35 @@ export function PostDetail() {
             title={post.title}
             description={`${post.author} · ${timestamp(post.updated_at)}`}
             actions={
-              (post.author_id === user.id ||
-                user.role === "admin" ||
-                (user.reviewer && post.kind !== "notice")) && (
-                <button onClick={() => setEdit(!edit)}>
+              canEdit && (
+                <button
+                  onClick={() => {
+                    if (confirmLeave()) setEdit(!edit);
+                  }}
+                >
                   {t("수정", "Edit")}
                 </button>
               )
             }
           />
           <ErrorMessage value={error} />
-          {edit ? (
+          {edit && canEdit ? (
             <Editor
+              key={post.id}
               kind={post.kind}
               original={post}
+              readVerified={
+                !conflictSnapshot ||
+                (conflictSnapshot.revision !== null &&
+                  post.revision > conflictSnapshot.revision)
+              }
+              conflictToken={conflictSnapshot}
+              onConflict={(revision) => {
+                setConflictSnapshot({ revision });
+                setRefresh((value) => value + 1);
+              }}
               onSave={() => {
+                setConflictSnapshot(null);
                 setEdit(false);
                 setRefresh((x) => x + 1);
               }}
@@ -192,139 +237,183 @@ function Editor({
   kind,
   original,
   onSave,
+  onConflict,
+  readVerified = true,
+  conflictToken,
 }: {
   kind: string;
   original?: any;
   onSave: (p: any) => void;
+  onConflict?: (rejectedRevision: number | null) => void;
+  readVerified?: boolean;
+  conflictToken?: object | null;
 }) {
   const send = useAccountMutation();
-  const [body, setBody] = useState(original?.body || ""),
-    [preview, setPreview] = useState(false),
+  const [preview, setPreview] = useState(false),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    { user } = useApp(),
+    { user, boards } = useApp(),
     t = useText(),
     staff = user.role === "admin" || user.reviewer;
+  const draft = useDraft({
+    kind: "board_post",
+    targetId: original?.id ?? `new:${kind}`,
+    enabled: boards,
+    conflictToken,
+    writable:
+      boards &&
+      readVerified &&
+      (kind === "notice"
+        ? user.role === "admin"
+        : kind === "internal"
+          ? staff
+          : !original || original.author_id === user.id || staff),
+    initialFields: {
+      title: original?.title ?? "",
+      body: original?.body ?? "",
+      visibility: original?.visibility ?? "public",
+      status: original?.status ?? "open",
+      pinned: !!original?.pinned,
+    },
+    baseRevision: original?.revision ?? null,
+    baseState: { status: original?.status ?? null },
+  });
+  const body = String(draft.fields.body);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     setBusy(true);
-    const data = new FormData(e.currentTarget);
     try {
       const result = await send(
         original ? "/boards/" + original.id : "/boards",
         {
           kind,
-          title: data.get("title"),
-          body,
-          visibility: data.get("visibility") || "public",
-          status: data.get("status") || original?.status || "open",
-          pinned: staff ? data.has("pinned") : Boolean(original?.pinned),
-          revision: original?.revision,
+          title: submission.fields.title,
+          body: submission.fields.body,
+          visibility: submission.fields.visibility,
+          status: submission.fields.status,
+          pinned: staff ? submission.fields.pinned : Boolean(original?.pinned),
+          revision: submission.baseRevision,
         },
         original ? "PUT" : "POST",
       );
+      if (!draft.markSubmitted(submission)) return;
       onSave(original || result);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
+      if (e instanceof APIError && e.status === 409)
+        onConflict?.(submission.baseRevision);
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
     <section className="panel form-panel">
+      <DraftRecovery
+        draft={draft}
+        latest={original ? `${original.title}\n${original.body}` : undefined}
+      />
       <form onSubmit={submit}>
-        <ErrorMessage value={error} />
-        <label>
-          {t("제목", "Title")}
-          <input
-            name="title"
-            defaultValue={original?.title}
-            maxLength={200}
-            required
-          />
-        </label>
-        <div className="toolbar">
-          <button type="button" onClick={() => setPreview(false)}>
-            {t("작성", "Write")}
-          </button>
-          <button type="button" onClick={() => setPreview(true)}>
-            {t("미리보기", "Preview")}
-          </button>
-        </div>
-        {preview ? (
-          <div className="markdown-preview">
-            <Markdown>{body}</Markdown>
-          </div>
-        ) : (
+        <fieldset disabled={draft.locked}>
+          <ErrorMessage value={error} />
           <label>
-            {t("본문", "Body")}
-            <textarea
-              className="editor"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              maxLength={50000}
+            {t("제목", "Title")}
+            <input
+              name="title"
+              value={String(draft.fields.title)}
+              onChange={(e) => draft.update("title", e.target.value)}
+              maxLength={200}
               required
             />
           </label>
-        )}
-        <div className="inline-form">
-          <label>
-            {t("공개 범위", "Visibility")}
-            <select
-              name="visibility"
-              defaultValue={original?.visibility || "public"}
-            >
-              <option value="public">{t("전체 공개", "Public")}</option>
-              <option value="private">
-                {t("작성자 · 운영자만", "Author & staff")}
-              </option>
-            </select>
-          </label>
-          <label>
-            {t("상태", "Status")}
-            <select
-              name="status"
-              disabled={
-                !staff &&
-                original &&
-                !["draft", "open"].includes(original.status)
-              }
-              defaultValue={original?.status || "open"}
-            >
-              {(staff
-                ? [
-                    "draft",
-                    "open",
-                    "triaged",
-                    "planned",
-                    "in_progress",
-                    "resolved",
-                    "closed",
-                  ]
-                : Array.from(
-                    new Set(
-                      ["draft", "open", original?.status].filter(Boolean),
-                    ),
-                  )
-              ).map((s) => (
-                <option key={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-          {staff && (
-            <label className="check">
-              <input
-                name="pinned"
-                type="checkbox"
-                defaultChecked={original?.pinned}
+          <div className="toolbar">
+            <button type="button" onClick={() => setPreview(false)}>
+              {t("작성", "Write")}
+            </button>
+            <button type="button" onClick={() => setPreview(true)}>
+              {t("미리보기", "Preview")}
+            </button>
+          </div>
+          {preview ? (
+            <div className="markdown-preview">
+              <Markdown>{body}</Markdown>
+            </div>
+          ) : (
+            <label>
+              {t("본문", "Body")}
+              <textarea
+                className="editor"
+                aria-label={t("본문", "Body")}
+                value={body}
+                onChange={(e) => draft.update("body", e.target.value)}
+                maxLength={50000}
+                required
               />
-              {t("상단 고정", "Pin post")}
             </label>
           )}
-        </div>
-        <button className="primary" disabled={busy || !body.trim()}>
-          {t("저장", "Save")}
-        </button>
+          <div className="inline-form">
+            <label>
+              {t("공개 범위", "Visibility")}
+              <select
+                name="visibility"
+                value={String(draft.fields.visibility)}
+                onChange={(e) => draft.update("visibility", e.target.value)}
+              >
+                <option value="public">{t("전체 공개", "Public")}</option>
+                <option value="private">
+                  {t("작성자 · 운영자만", "Author & staff")}
+                </option>
+              </select>
+            </label>
+            <label>
+              {t("상태", "Status")}
+              <select
+                name="status"
+                disabled={
+                  !staff &&
+                  original &&
+                  !["draft", "open"].includes(original.status)
+                }
+                value={String(draft.fields.status)}
+                onChange={(e) => draft.update("status", e.target.value)}
+              >
+                {(staff
+                  ? [
+                      "draft",
+                      "open",
+                      "triaged",
+                      "planned",
+                      "in_progress",
+                      "resolved",
+                      "closed",
+                    ]
+                  : Array.from(
+                      new Set(
+                        ["draft", "open", original?.status].filter(Boolean),
+                      ),
+                    )
+                ).map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+            {staff && (
+              <label className="check">
+                <input
+                  name="pinned"
+                  type="checkbox"
+                  checked={!!draft.fields.pinned}
+                  onChange={(e) => draft.update("pinned", e.target.checked)}
+                />
+                {t("상단 고정", "Pin post")}
+              </label>
+            )}
+          </div>
+          <button className="primary" disabled={busy || !body.trim()}>
+            {t("저장", "Save")}
+          </button>
+        </fieldset>
       </form>
     </section>
   );

@@ -1,3 +1,5 @@
+import { useDraft } from "../useDraft";
+import { DraftRecovery } from "../DraftRecovery";
 import { useAccountMutation } from "../accountMutations";
 import { useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
@@ -126,28 +128,45 @@ export function ReviewDetail() {
     [refresh, setRefresh] = useState(0),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    load = useLoad("/reviews/" + id, refresh),
+    load = useLoad("/reviews/" + id, refresh, 4000),
     { user } = useApp(),
     t = useText(),
     r = load.data;
+  const draft = useDraft({
+    kind: "review_decision",
+    targetId: id!,
+    enabled:
+      !!r && (!load.error || load.retryable) && r.requester_id !== user.id,
+    writable:
+      r?.status === "pending" && user.reviewer && r?.requester_id !== user.id,
+    initialFields: { decision: "rejected", reason: "" },
+    baseRevision: r?.revision ?? null,
+    baseState: {
+      status: r?.status,
+      decided_at: r?.decided_at == null ? null : String(r.decided_at),
+      review_id: r?.id,
+    },
+  });
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const submission = draft.beginSubmission();
     setBusy(true);
-    const data = new FormData(e.currentTarget);
     try {
       await send(`/reviews/${id}/decision`, {
-        decision: data.get("decision"),
-        reason: data.get("reason"),
+        decision: submission.fields.decision,
+        reason: submission.fields.reason,
       });
+      if (!draft.markSubmitted(submission)) return;
       setRefresh((x) => x + 1);
     } catch (e) {
+      if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      if (draft.isCurrentSubmission(submission)) setBusy(false);
     }
   }
   return (
-    <State {...load}>
+    <State {...load} preserveContent={!!r && (!load.error || load.retryable)}>
       {r && (
         <>
           <PageTitle
@@ -173,45 +192,57 @@ export function ReviewDetail() {
           </section>
           <Admission job={r.job} />
           <Findings findings={r.job.result.findings || []} />
+          <DraftRecovery draft={draft} latest={r.decision_reason || r.reason} />
           {r.status === "pending" &&
             user.reviewer &&
             r.requester_id !== user.id && (
               <section className="panel form-panel">
                 <h2>{t("검토 결정", "Review decision")}</h2>
                 <form onSubmit={submit}>
-                  <ErrorMessage value={error} />
-                  <label>
-                    {t("결정", "Decision")}
-                    <select name="decision">
-                      <option value="rejected">{t("반려", "Reject")}</option>
-                      <option
-                        value="approved"
-                        disabled={!r.job.result.coverage_complete}
+                  <fieldset disabled={draft.locked}>
+                    <ErrorMessage value={error} />
+                    <label>
+                      {t("결정", "Decision")}
+                      <select
+                        name="decision"
+                        value={String(draft.fields.decision)}
+                        onChange={(e) =>
+                          draft.update("decision", e.target.value)
+                        }
                       >
-                        {t("승인", "Approve")}
-                      </option>
-                    </select>
-                  </label>
-                  {!r.job.result.coverage_complete && (
-                    <p className="muted">
-                      {t(
-                        "필수 검사가 완료되어야 승인할 수 있습니다.",
-                        "Required scan coverage must complete before approval.",
-                      )}
-                    </p>
-                  )}
-                  <label>
-                    {t("결정 사유", "Decision reason")}
-                    <textarea
-                      name="reason"
-                      minLength={5}
-                      maxLength={4000}
-                      required
-                    />
-                  </label>
-                  <button className="primary" disabled={busy}>
-                    {t("결정 저장", "Save decision")}
-                  </button>
+                        <option value="rejected">{t("반려", "Reject")}</option>
+                        <option
+                          value="approved"
+                          disabled={!r.job.result.coverage_complete}
+                        >
+                          {t("승인", "Approve")}
+                        </option>
+                      </select>
+                    </label>
+                    {!r.job.result.coverage_complete && (
+                      <p className="muted">
+                        {t(
+                          "필수 검사가 완료되어야 승인할 수 있습니다.",
+                          "Required scan coverage must complete before approval.",
+                        )}
+                      </p>
+                    )}
+                    <label>
+                      {t("결정 사유", "Decision reason")}
+                      <textarea
+                        name="reason"
+                        aria-label={t("결정 사유", "Decision reason")}
+                        value={String(draft.fields.reason)}
+                        onChange={(e) => draft.update("reason", e.target.value)}
+                        minLength={5}
+                        maxLength={4000}
+                        required
+                      />
+                    </label>
+                    <button className="primary" disabled={busy}>
+                      {t("결정 저장", "Save decision")}
+                    </button>
+                  </fieldset>
                 </form>
               </section>
             )}

@@ -40,6 +40,11 @@ import {
 import { api, APIError, send, sendAsAccount, type User } from "./api";
 import { Brand, syncFavicon } from "./Brand";
 import { sessionCoordinator, publishAccountObservation } from "./session";
+import {
+  clearAccountDrafts,
+  clearOtherAccountDrafts,
+  clearInternalCommentDrafts,
+} from "./drafts";
 import { normalizeReturnTo } from "./returnPaths";
 import { AppContext } from "./context";
 import { ErrorMessage, State } from "./components";
@@ -104,6 +109,23 @@ export default function App() {
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [draftStorageError, setDraftStorageError] = useState(false);
+  const clearDraftsFor = (account: string) => {
+    try {
+      clearAccountDrafts(account);
+    } catch {
+      setDraftStorageError(true);
+    }
+  };
+  const acceptDraftAccount = (account: User) => {
+    try {
+      clearOtherAccountDrafts(account.id);
+      if (!account.reviewer && account.role !== "admin")
+        clearInternalCommentDrafts(account.id);
+    } catch {
+      setDraftStorageError(true);
+    }
+  };
   const [displayName, setDisplayNameState] = useState<string | null>(null);
   const profileGeneration = useRef(0);
   const currentUserId = useRef<string | null>(null);
@@ -126,8 +148,10 @@ export default function App() {
       .then(([config, current]) => {
         if (sessionGeneration.current !== generation) return;
         setConfig(config);
+        if (current) acceptDraftAccount(current);
         sessionCoordinator.setAccount(current?.id ?? null);
-        publishAccountObservation(current?.id ?? null);
+        // An unauthenticated read may be expiry. Only explicit logout publishes null.
+        if (current) publishAccountObservation(current.id);
         setUser(current);
       })
       .catch((e) => {
@@ -143,7 +167,6 @@ export default function App() {
       sessionCoordinator.subscribe(() => {
         sessionGeneration.current++;
         sessionCoordinator.setAccount(null);
-        publishAccountObservation(null);
         setUser(null);
         setSessionExpired(true);
         setLoading(false);
@@ -152,7 +175,15 @@ export default function App() {
   );
   useEffect(() => {
     const changed = (event: StorageEvent) => {
-      if (event.key === "aag-auth-change") reconcileSession();
+      if (event.key === "aag-auth-change") {
+        const observed = localStorage.getItem("aag-auth-observed-account");
+        try {
+          clearOtherAccountDrafts(observed ?? "");
+        } catch {
+          setDraftStorageError(true);
+        }
+        reconcileSession();
+      }
     };
     window.addEventListener("storage", changed);
     return () => window.removeEventListener("storage", changed);
@@ -223,6 +254,7 @@ export default function App() {
   const refresh = async () => {
     const current = await api<User>("/auth/me");
     sessionGeneration.current++;
+    acceptDraftAccount(current);
     sessionCoordinator.invalidate();
     sessionCoordinator.setAccount(current.id);
     setSessionExpired(false);
@@ -440,6 +472,7 @@ export default function App() {
                       className="account-item"
                       onSelect={async () => {
                         await sendAsAccount("/auth/logout", {}, user.id);
+                        clearDraftsFor(user.id);
                         sessionCoordinator.setAccount(null);
                         setSessionExpired(false);
                         setUser(null);
@@ -477,7 +510,16 @@ export default function App() {
               </Link>
             </div>
             <main id="main-content" tabIndex={-1}>
+              {draftStorageError && (
+                <div className="error" role="alert">
+                  {t(
+                    "이 탭의 초안 저장소에 접근할 수 없습니다. 작성 내용을 따로 보관하세요.",
+                    "Draft storage is unavailable in this tab. Keep a separate copy of your input.",
+                  )}
+                </div>
+              )}
               <Suspense
+                key={location.pathname}
                 fallback={
                   <State loading>
                     <></>
