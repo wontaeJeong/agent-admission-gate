@@ -156,3 +156,67 @@ export type ReviewWorkflowState =
   | "in_review"
   | "changes_requested"
   | "closed";
+
+export type ComparisonFinding = Pick<
+  Finding,
+  | "fingerprint"
+  | "engine"
+  | "rule"
+  | "severity"
+  | "title"
+  | "path"
+  | "line"
+  | "suppressed"
+>;
+export type ComparisonClassification =
+  | "persisting"
+  | "moved_candidate"
+  | "new"
+  | "not_observed"
+  | "unmatched";
+export type ComparisonMetadata = Pick<
+  Job,
+  | "id"
+  | "source"
+  | "source_type"
+  | "ref"
+  | "resolved_commit"
+  | "target_commit"
+  | "profile"
+  | "status"
+  | "verdict"
+  | "effective_verdict"
+  | "content_hash"
+  | "created_at"
+> & {
+  policy_version: string | null;
+  scanner_revision: string | null;
+  coverage_complete: boolean;
+  engines: {
+    name: string | null;
+    status: string | null;
+    required: boolean | null;
+    engine_version: string | null;
+    database_version: string | null;
+  }[];
+};
+export type ComparisonDTO = {
+  baseline: ComparisonMetadata;
+  current: ComparisonMetadata;
+  comparability: {
+    same_source: boolean;
+    same_profile: boolean;
+    same_policy: boolean | null;
+    same_scanner_revision: boolean | null;
+    coverage_complete: boolean;
+    provenance_known: boolean;
+  };
+  summary: Record<ComparisonClassification, number> | null;
+  items: {
+    classification: ComparisonClassification;
+    baseline_finding: ComparisonFinding | null;
+    current_finding: ComparisonFinding | null;
+    change_flags: ("severity_changed" | "suppression_changed")[];
+    confidence: "exact" | "candidate" | "unmatched";
+  }[];
+};

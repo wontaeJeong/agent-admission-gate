@@ -329,7 +329,7 @@
 
 - Residual I3/R1: a receipt captured version1, but conflict discard reset the mounted form to0 and one new edit reused1. Releasing the earlier accepted board PUT then cleared the newer draft and closed the editor. Resolution: keep edit versions monotonic across discard, qualification pruning, successful clear and pristine server-field/base adoption; only a new form instance initializes at0. Keep `isCurrentSubmission` independent of edit version so the pending request settles busy while stricter `markSubmitted` rejects destructive completion. Prevention: delay an accepted PUT across the revision2 poll, discard the resulting conflict, make exactly one new edit, release success and assert editor/value/storage plus enabled Save after lifecycle flush. Audit every reset rather than only direct typing.
 
-- Communication note (controller-supplied): progress updates repeatedly mixed Japanese or a Han-script word into Korean, including a further recurrence during E1. Resolution: restate the update in natural Korean. Prevention: scan each progress message for Han, Hiragana and Katakana characters before sending, while allowing ordinary technical English; remove unintended language mixing. No product behavior changed.
+- Communication note (controller-supplied): progress updates repeatedly mixed Japanese or a Han-script word into Korean, including further recurrences during E1 and B3 (a Han-script substitution for the Korean word for comparison). Resolution: restate the update in natural Korean. Prevention: scan each progress message for Han, Hiragana and Katakana characters before sending, while allowing ordinary technical English; remove unintended language mixing. No product behavior changed.
 
 ## 2026-11-17 — A3 saved views and list return
 
@@ -445,3 +445,14 @@
 - Root screenshot QA found the new Korean review column showed raw pending/in_review values. Reproduced with a table-text browser assertion, localized status and reused workflowLabel; the same assertion passed with 대기 · 검토 중. Pin translated review/workflow output in the Korean browser state before capture approval.
 - The isolated copy regression first used a frontend-relative CLI path from repository root, then lacked the frontend package's ESM setting. Neither reached product assertions. Use the actual frontend CLI path and a temporary package.json with type=module for out-of-tree Playwright probes.
 - An exact replacement for the review JSX missed Prettier's line breaks, so the first attempted copy fix still failed the same assertion. Inspected the rendered expression, replaced each actual expression and confirmed GREEN. Assert replacement counts or inspect the changed source before rebuilding.
+
+
+## 2026-11-17 — B3 stored evidence comparison checks
+
+- Initial discovery assumed absent scanner/domain and browser test filenames. The reads failed without product edits; located the actual modules and existing fixture files instead. Inspect the repository file inventory before assuming conventional paths.
+- Additional malformed-result coverage test showed that a stored coverage_complete flag plus completed engines could hide an absent or malformed findings array. Required a valid stored findings array before reporting complete comparison coverage; RED then GREEN on SQLite/PostgreSQL. Keep malformed and partial records distinct from an observed empty list.
+- First lint pass found unsorted new test imports. Applied Ruff's scoped import fix and reran lint separately from formatting. Use the repository import grouping in new fixtures.
+- Mobile visual QA found overly narrow table cells despite a passing page-overflow assertion. Scoped minimum table width to the comparison screen's mobile layout and made its contained scroll keyboard-focusable. Test actual column readability and keyboard scrolling as well as page overflow.
+- The first unlinked-ZIP confirmation capture showed Loading because absence of tables also holds while a request is pending. Wait for the actual confirmation button before capture; screenshots must assert the intended state, not merely absence of the next state.
+
+- Running the combined B2/B3 focused suite with capture enabled also regenerated three existing B2 images. Restored those task-generated changes from the clean base; kept only the new B3 evidence. Limit capture-enabled runs to the intended feature spec and use capture-disabled regression runs for predecessor specs.

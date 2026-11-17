@@ -28,6 +28,7 @@ from .review_workflow import (
     transition_review,
     visible_review,
 )
+from .scan_comparison import compare_jobs
 from .scan_history import history_item, history_query
 from .scan_summary import build_scan_summary
 from .schemas import (
@@ -192,6 +193,26 @@ def scan_history(
             "page": page,
             "page_size": page_size,
         }
+
+
+@router.get("/scans/{job_id}/compare")
+def scan_compare(
+    job_id: str,
+    request: Request,
+    baseline_id: str = Query(..., min_length=1, max_length=64),
+    allow_unlinked: bool = False,
+    a: Actor = Depends(actor),
+):
+    a.scope("scan:read")
+    allowed = {"baseline_id", "allow_unlinked"}
+    if set(request.query_params) - allowed or any(
+        len(request.query_params.getlist(key)) > 1 for key in allowed
+    ):
+        raise HTTPException(422, "Unsupported comparison query")
+    with request.app.state.db.session() as s:
+        current = owned_job(s, job_id, a)
+        baseline = owned_job(s, baseline_id, a)
+        return compare_jobs(baseline, current, allow_unlinked=allow_unlinked)
 
 
 @router.get("/scans/{job_id}/summary")
