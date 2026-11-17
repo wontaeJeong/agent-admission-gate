@@ -193,3 +193,17 @@ if app.state.settings.search_enabled:
         s.add(Review(id="search-review", job_id=job.id, requester_id=job.owner_id, reason="Synthetic review request"))
         s.add(Job(id="search-unindexed", owner_id="a1-bob", source="pending-index.zip",
                   source_type="upload", profile="static", status="COMPLETED", result={"findings": []}))
+
+if os.environ.get("AAG_NOTIFICATION_TARGETS_FIXTURE") == "true":
+    from aag.models import APIKey, ExceptionRule
+    from aag.notifications import emit_notification, emit_resource_notification
+    with app.state.db.session.begin() as s:
+        s.get(User, "a1-alice").role = "admin"
+        s.add(APIKey(id="d1-key", owner_id="a1-alice", name="Build integration", digest="fixture-only-key", suffix="test", expires_at=time.time() + 3600))
+        s.add(APIKey(id="d1-revoked", owner_id="a1-alice", name="Retired integration", digest="fixture-only-revoked", suffix="test", expires_at=time.time() + 3600, revoked_at=time.time()))
+        s.add(ExceptionRule(id="d1-exception", created_by="a1-alice", source="synthetic-policy.zip", reason="Synthetic exact-content exception", fingerprint="c"*64, content_hash="a"*64, expires_at=time.time()-60))
+        s.flush()
+        emit_notification(s, "scan.completed", s.get(Job, "a1-synthetic-job"), ["a1-alice"], "d1-scan")
+        emit_resource_notification(s, "key.expiring_1d", "api_key", "d1-key", ["a1-alice"], "d1-key")
+        emit_resource_notification(s, "key.expiring_7d", "api_key", "d1-revoked", ["a1-alice"], "d1-revoked")
+        emit_resource_notification(s, "exception.expired", "exception", "d1-exception", ["a1-alice"], "d1-exception")

@@ -1,5 +1,6 @@
 import { useAccountMutation } from "../accountMutations";
 import { useState, type FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   CopyButton,
   Badge,
@@ -35,6 +36,14 @@ function KeysUnavailable() {
 }
 
 export function Keys({ admin = false }: { admin?: boolean }) {
+  const [params] = useSearchParams();
+  const requested = !admin && params.has("key");
+  const keyId =
+    requested &&
+    params.getAll("key").length === 1 &&
+    /^[A-Za-z0-9_-]{1,64}$/.test(params.get("key") || "")
+      ? params.get("key")
+      : null;
   const send = useAccountMutation();
   const { apiKeysState } = useApp();
   const [refresh, setRefresh] = useState(0),
@@ -45,7 +54,10 @@ export function Keys({ admin = false }: { admin?: boolean }) {
     [busy, setBusy] = useState(false),
     t = useText(),
     base = admin ? "/admin/api-keys" : "/api-keys",
-    load = useLoad(base, refresh);
+    load = useLoad(
+      base + (keyId ? "?key=" + encodeURIComponent(keyId) : ""),
+      refresh,
+    );
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = e.currentTarget,
@@ -154,6 +166,16 @@ export function Keys({ admin = false }: { admin?: boolean }) {
         </section>
       )}
       <State {...load}>
+        {requested &&
+          load.data &&
+          !load.data.some((key: any) => key.id === keyId) && (
+            <p className="notice" role="status">
+              {t(
+                "선택한 API 키를 찾을 수 없습니다.",
+                "The selected API key was not found.",
+              )}
+            </p>
+          )}
         {load.data?.length ? (
           <div className="key-list">
             <p className="panel-note">
@@ -163,7 +185,16 @@ export function Keys({ admin = false }: { admin?: boolean }) {
               )}
             </p>
             {load.data.map((k: any) => (
-              <article className="panel key-card" key={k.id}>
+              <article
+                className="panel key-card"
+                key={k.id}
+                aria-current={keyId === k.id ? "true" : undefined}
+              >
+                {keyId === k.id && (
+                  <p className="notice" role="status">
+                    {t("선택한 API 키", "Selected API key")}
+                  </p>
+                )}
                 <header>
                   <div>
                     <h2>{k.name}</h2>

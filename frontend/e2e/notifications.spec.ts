@@ -58,6 +58,8 @@ type MockInbox = {
     review_results: boolean;
     review_updates: boolean;
     comments: boolean;
+    credentials: boolean;
+    exceptions: boolean;
   };
 };
 async function mockInbox(page: Page, shared?: MockInbox) {
@@ -73,6 +75,8 @@ async function mockInbox(page: Page, shared?: MockInbox) {
       review_results: true,
       review_updates: true,
       comments: true,
+      credentials: true,
+      exceptions: true,
     },
   };
   await page.addInitScript(() => localStorage.setItem("aag-lang", "en"));

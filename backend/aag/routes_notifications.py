@@ -5,7 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 from sqlalchemy import func, select, update
 
 from .auth import Actor, actor
-from .models import Job, Notification, NotificationInbox, NotificationPreference
+from .models import Notification, NotificationInbox, NotificationPreference
+from .notification_targets import with_target_details
 from .notifications import (
     Category,
     State,
@@ -49,6 +50,8 @@ class PreferenceChange(NonNullPatch):
     review_results: StrictBool | None = None
     review_updates: StrictBool | None = None
     comments: StrictBool | None = None
+    credentials: StrictBool | None = None
+    exceptions: StrictBool | None = None
 
 
 class MarkAll(BaseModel):
@@ -93,13 +96,13 @@ def list_notifications(
         )
         total = s.scalar(select(func.count()).select_from(query.subquery()))
         rows = s.execute(
-            query.add_columns(Job.source)
+            with_target_details(query, now)
             .order_by(Notification.created_at.desc(), Notification.id.desc())
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
         return {
-            "items": [notification_record(n, source) for n, source in rows],
+            "items": [notification_record(n, source, state) for n, source, state in rows],
             "total": total,
             "unread_count": unread_count(s, a, now, through=boundary),
             "filtered_unread_count": unread_count(s, a, now, category, boundary),
@@ -135,18 +138,18 @@ def change_notification(
     now = time.time()
     with request.app.state.db.session.begin() as s:
         row = s.execute(
-            visible_notifications(a, now)
-            .where(Notification.id == notification_id)
-            .add_columns(Job.source)
+            with_target_details(
+                visible_notifications(a, now).where(Notification.id == notification_id), now
+            )
         ).first()
         if row is None:
             raise HTTPException(404, "Notification not found")
-        n, source = row
+        n, source, state = row
         if "read" in data.model_fields_set:
             n.read_at = (n.read_at or now) if data.read else None
         if "archived" in data.model_fields_set:
             n.archived_at = (n.archived_at or now) if data.archived else None
-        return notification_record(n, source)
+        return notification_record(n, source, state)
 
 
 @router.get("/notification-preferences")

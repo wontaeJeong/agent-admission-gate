@@ -7,25 +7,21 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-from .models import Job, Notification, NotificationInbox, NotificationPreference, Review, User
+from .models import Notification, NotificationInbox, NotificationPreference, User
+from .notification_targets import EVENT_PREFERENCE, resolve_target, target_record, target_visibility
 
 RETENTION_SECONDS = 90 * 86400
-Category = Literal["all", "scans", "reviews", "comments"]
+Category = Literal["all", "scans", "reviews", "comments", "credentials", "exceptions"]
 State = Literal["all", "unread", "archived"]
-PREFERENCES = ("scans", "review_requests", "review_results", "review_updates", "comments")
-EVENT_PREFERENCE = {
-    "scan.completed": "scans",
-    "scan.failed": "scans",
-    "scan.cancelled": "scans",
-    "review.requested": "review_requests",
-    "review.approved": "review_results",
-    "review.rejected": "review_results",
-    **{
-        f"review.{kind}": "review_updates"
-        for kind in ("claimed", "released", "changes_requested", "responded", "withdrawn")
-    },
-    "comment.created": "comments",
-}
+PREFERENCES = (
+    "scans",
+    "review_requests",
+    "review_results",
+    "review_updates",
+    "comments",
+    "credentials",
+    "exceptions",
+)
 
 
 def conflict_insert(s, model):
@@ -39,30 +35,33 @@ def preference_values(row):
 
 
 def emit_notification(s, kind, job, recipients, event_key, review_id=None, *, actor_id=None):
+    resource_type = "review" if review_id else "scan"
+    resource_id = review_id or job.id
+    _, target_job = resolve_target(s, kind, resource_type, resource_id)
+    if target_job.id != job.id:
+        raise ValueError("Notification review belongs to a different scan")
+    return emit_resource_notification(
+        s, kind, resource_type, resource_id, set(recipients) - {None, actor_id}, event_key
+    )
+
+
+def emit_resource_notification(s, kind, resource_type, resource_id, recipients, event_key):
+    """Stage delivery in the caller transaction; never commit or lock an actor."""
+    _, job = resolve_target(s, kind, resource_type, resource_id)
     preference = EVENT_PREFERENCE[kind]
-    recipients = set(recipients) - {None, actor_id}
-    if not recipients:
-        return
+    recipients = set(recipients) - {None}
     query = (
         select(User.id)
         .outerjoin(NotificationPreference, NotificationPreference.user_id == User.id)
         .where(
             User.id.in_(recipients),
-            User.active.is_(True),
+            target_visibility(resource_type, resource_id, kind),
             or_(
                 NotificationPreference.user_id.is_(None),
                 getattr(NotificationPreference, preference).is_(True),
             ),
         )
     )
-    if kind == "review.requested":
-        query = query.where(User.reviewer.is_(True), User.id != job.owner_id)
-    if preference == "review_updates":
-        # Same current owner/staff authorization as review reads; assignment alone
-        # never grants read access after qualification loss.
-        query = query.where(
-            or_(User.id == job.owner_id, User.role == "admin", User.reviewer.is_(True))
-        )
     for recipient in s.scalars(query.order_by(User.id)):
         # Held until commit: a plain DB sequence permits allocations to commit
         # out of order and cannot define a committed inbox snapshot.
@@ -81,9 +80,11 @@ def emit_notification(s, kind, job, recipients, event_key, review_id=None, *, ac
                 event_key=event_key,
                 sequence=sequence,
                 kind=kind,
-                job_id=job.id,
-                review_id=review_id,
-                verdict=job.effective_verdict if kind != "comment.created" else None,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                job_id=job.id if job else None,
+                review_id=resource_id if resource_type == "review" else None,
+                verdict=job.effective_verdict if job and kind != "comment.created" else None,
             )
             .on_conflict_do_nothing(index_elements=["recipient_id", "event_key"])
         )
@@ -97,24 +98,20 @@ def notify_terminal(s, job):
 
 def visible_notifications(a, now):
     """Use the same live authorization for listing, counts, and every mutation."""
-    query = (
-        select(Notification)
-        .join(Job, Job.id == Notification.job_id)
-        .outerjoin(Review, Review.id == Notification.review_id)
+    return select(Notification).where(
+        Notification.recipient_id == a.id,
+        Notification.created_at >= now - RETENTION_SECONDS,
+        Notification.created_at <= now,
+        select(User.id)
         .where(
-            Notification.recipient_id == a.id,
-            Notification.created_at >= now - RETENTION_SECONDS,
-            Notification.created_at <= now,
+            User.id == a.id,
+            target_visibility(
+                Notification.resource_type, Notification.resource_id, Notification.kind, actor=a
+            ),
         )
+        .correlate(Notification)
+        .exists(),
     )
-    if not a.staff:
-        query = query.where(
-            Job.owner_id == a.id,
-            or_(Notification.review_id.is_(None), Review.requester_id == a.id),
-        )
-    if not a.reviewer:
-        query = query.where(Notification.kind != "review.requested")
-    return query
 
 
 def filtered_notifications(query, state: State = "all", category: Category = "all"):
@@ -126,17 +123,24 @@ def filtered_notifications(query, state: State = "all", category: Category = "al
     if state == "unread":
         query = query.where(Notification.read_at.is_(None))
     if category != "all":
-        prefix = {"scans": "scan.", "reviews": "review.", "comments": "comment."}[category]
+        prefix = {
+            "scans": "scan.",
+            "reviews": "review.",
+            "comments": "comment.",
+            "credentials": "key.",
+            "exceptions": "exception.",
+        }[category]
         query = query.where(Notification.kind.startswith(prefix))
     return query
 
 
-def notification_record(n, source):
+def notification_record(n, source, state):
     return {
         "id": n.id,
         "kind": n.kind,
-        "source": source,
-        "href": f"/reviews/{n.review_id}" if n.review_id else f"/jobs/{n.job_id}",
+        "resource_type": n.resource_type,
+        "resource_id": n.resource_id,
+        **target_record(n, source, state),
         "verdict": n.verdict,
         "created_at": n.created_at,
         "read_at": n.read_at,

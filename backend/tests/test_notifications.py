@@ -224,6 +224,8 @@ def test_preferences_persist_apply_to_future_only_and_reject_extra_fields(
         "review_results": True,
         "review_updates": True,
         "comments": True,
+        "credentials": True,
+        "exceptions": True,
     }
     response = client.put("/api/notification-preferences", json={"scans": False})
     assert response.status_code == 200 and response.json()["scans"] is False
@@ -278,6 +280,8 @@ def test_retention_pagination_and_prune(client, app, people, reviewable):
                     event_key=f"seed:{i}",
                     kind="scan.completed",
                     job_id=reviewable,
+                    resource_type="scan",
+                    resource_id=reviewable,
                     created_at=now - i,
                 )
             )
@@ -287,6 +291,8 @@ def test_retention_pagination_and_prune(client, app, people, reviewable):
                 event_key="expired",
                 kind="scan.failed",
                 job_id=reviewable,
+                resource_type="scan",
+                resource_id=reviewable,
                 created_at=now - 91 * 86400,
             )
         )
