@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 export async function startOidcFixture(
   options: {
     reviewWorkflow?: boolean;
+    keyReplacement?: boolean | "disabled";
     search?: boolean;
     notificationTargets?: boolean;
     expirationReminders?:
@@ -53,6 +54,9 @@ export async function startOidcFixture(
         AAG_OIDC_FIXTURE_DIR: directory,
         AAG_EXPIRATION_REMINDERS_FIXTURE: options.expirationReminders || "",
         AAG_C1_FIXTURE: options.reviewWorkflow ? "true" : "false",
+        AAG_D3_FIXTURE: options.keyReplacement ? "true" : "false",
+        AAG_D3_ISSUANCE_DISABLED:
+          options.keyReplacement === "disabled" ? "true" : "false",
         AAG_SEARCH_ENABLED: options.search ? "true" : "false",
         AAG_NOTIFICATION_TARGETS_FIXTURE: options.notificationTargets
           ? "true"

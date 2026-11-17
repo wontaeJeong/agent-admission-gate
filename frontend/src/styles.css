@@ -1690,6 +1690,9 @@ tbody tr:hover {
   flex: 1;
   min-width: 0;
 }
+.exception-row > div {
+  flex-basis: 440px;
+}
 .device-row code {
   word-break: break-all;
 }

@@ -69,10 +69,15 @@
 
 **인터페이스:** '새 키로 교체 준비'는 기존 name/scopes만 발급 폼에 채운다. 새 키 발급이 성공해도 이전 key_id는 유지한다. A1 account-bound 송신을 사용하고 토큰은 A2 초안 대상에서 제외한다.
 
-- [ ] **1. 브라우저 실패 사례:** test_replacement_keeps_old_key_active, test_new_key_shown_once_not_in_storage, test_issuance_disabled_not_bypassed, test_old_key_revocation_requires_reason, test_exception_changed_hash_not_reused를 작성하고 미구현 실패를 확인한다.
-- [ ] **2. UI 구현:** 새 키 원문을 한 번 보여주고 복사·안전한 저장 안내를 제공한다. 도구 반영 후 사용자가 기존 키 폐기를 별도로 실행하게 한다. 네트워크 오류 시 발급 성공 여부 확인 없이 자동 재발급하지 않는다. 예외는 기존 hash/fingerprint 확인과 해당 소스 재검사·새 예외 검토로 연결한다.
+- [x] **1. 브라우저 실패 사례:** test_replacement_keeps_old_key_active, test_new_key_shown_once_not_in_storage, test_issuance_disabled_not_bypassed, test_old_key_revocation_requires_reason, test_exception_changed_hash_not_reused를 작성하고 미구현 실패를 확인한다.
+- [x] **2. UI 구현:** 새 키 원문을 한 번 보여주고 복사·안전한 저장 안내를 제공한다. 도구 반영 후 사용자가 기존 키 폐기를 별도로 실행하게 한다. 네트워크 오류 시 발급 성공 여부 확인 없이 자동 재발급하지 않는다. 예외는 기존 hash/fingerprint 확인과 해당 소스 재검사·새 예외 검토로 연결한다.
 - [ ] **3. PR:** 기존 발급/폐기 권한 회귀와 key-replacement E2E를 검증한다. 교체 전후·비활성 발급·예외 재검토 이미지를 포함해 feat: guide key replacement and exception revalidation로 커밋·PR을 만든다.
 
 **완료:** F07 전체. 자동 연장이나 자동 폐기는 추가하지 않는다.
 
 **D2 구현 결정(2026-11-17):** D1은 [PR #27](https://github.com/wontaeJeong/agent-admission-gate/pull/27)로 병합됐다. D2는 DB별 float 문자열 변환 차이로 중복 감지가 달라지지 않도록 `Notification.expiry_snapshot` nullable Float와 recipient/type/id/kind/expiry 인덱스를 선형 migration에 추가한다. 검증된 새 발행 사실에서만 값을 저장하며 과거 NULL은 현재 만료 시각으로 backfill하지 않는다. 정확한 event_key는 Python float.hex와 대상/단계를 포함한다. 기존 producer는 같은 트랜잭션과 정렬된 inbox 할당을 유지하면서 실제 insert 수를 반환한다. 활성화 기준은 선택적 `AAG_EXPIRY_REMINDERS_ENABLED_AT` 설정으로 웹/CLI에 동일하게 기록한다. 새 활성화 이전 성공은 기준을 늦추지 않고, 기준이 없거나 무효하면 구성 확인 상태를 표시한다. 이 두 확장은 controller가 정확한 중복 처리와 재시작 후 지연 판단을 위해 승인한 D2 범위다.
+
+
+**D3 구현 결정(2026-11-17):** 기존 /api/api-keys, /api/api-keys/{id}/revoke, /api/admin/allowlist 계약을 재사용하며 새 API·migration을 추가하지 않는다. 준비/발급 전에 auth/config와 auth/me를 조회하고, 준비 시 owner-scoped ?key= 조회를 다시 수행한다. name/scopes만 복사하며 사용자가 선택한 만료 기간은 보존한다. 폼·새 토큰은 메모리에만 두고 계정 generation, form lifetime, 단조 증가 edit version과 submission sequence의 receipt로 늦은 성공의 파괴적 초기화를 차단한다. 이후 작성이 있어도 현재 요청의 busy/error는 약한 receipt 검사로 정리한다. 불명확한 발급·폐기는 GET으로 현재 목록을 확인하기 전 재송신하지 않는다.
+
+예외 DTO에는 원본 job ID가 없으므로 /new에서 수동 소스 선택/파일 업로드를 안내한다. 원래 content_hash/fingerprint를 모두 표시하고 기존 새 예외 폼에 초점만 이동한다. 과거 해시나 추정 검사 계보를 복사하지 않고 작성 중인 입력을 보존한다. 새 해시 등록은 별도 예외 ID이며 기존 예외의 해시·만료를 바꾸지 않는다. 이는 controller가 승인한 기존 API 범위 내 선택이다. 브라우저 근거와 검증 결과는 task-14 보고서에 기록하고 PR 생성·독립 검토·정확한 head CI는 controller가 수행한다.

@@ -1,5 +1,7 @@
 import { useAccountMutation } from "../accountMutations";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import { useMemorySubmission } from "../useMemorySubmission";
+import { sessionCoordinator } from "../session";
 import { useSearchParams } from "react-router-dom";
 import {
   CopyButton,
@@ -12,16 +14,17 @@ import {
   Tabs,
   useLoad,
 } from "../components";
-import { api, timestamp } from "../api";
+import { api, APIError, timestamp } from "../api";
 import { useApp, useText } from "../context";
 
-function KeysUnavailable() {
+function KeysUnavailable({ state }: { state?: string }) {
   const { apiKeysState } = useApp(),
     t = useText();
-  if (apiKeysState === "available") return null;
+  const availability = state ?? apiKeysState;
+  if (availability === "available") return null;
   return (
     <div className="notice" role="status">
-      {apiKeysState === "identity_unconfigured"
+      {availability === "identity_unconfigured"
         ? t(
             "SSO 계정·그룹 확인이 구성되지 않아 API 키와 도구 연결이 차단되었습니다.",
             "API keys and tool connections are blocked because SSO account and group checks are not configured.",
@@ -45,12 +48,22 @@ export function Keys({ admin = false }: { admin?: boolean }) {
       ? params.get("key")
       : null;
   const send = useAccountMutation();
-  const { apiKeysState } = useApp();
+  const { apiKeysState, user, reconcileSession } = useApp();
+  const issuance = useMemorySubmission(),
+    revocation = useMemorySubmission();
+  const createForm = useRef<HTMLFormElement>(null);
+  const pending = useRef(false);
   const [refresh, setRefresh] = useState(0),
     [token, setToken] = useState(""),
     [error, setError] = useState(""),
     [selected, setSelected] = useState(""),
     [reason, setReason] = useState(""),
+    [replacement, setReplacement] = useState(""),
+    [name, setName] = useState(""),
+    [scopes, setScopes] = useState(["scan:read", "scan:write"]),
+    [days, setDays] = useState("90"),
+    [availability, setAvailability] = useState(apiKeysState),
+    [uncertain, setUncertain] = useState(false),
     [busy, setBusy] = useState(false),
     t = useText(),
     base = admin ? "/admin/api-keys" : "/api-keys",
@@ -58,41 +71,161 @@ export function Keys({ admin = false }: { admin?: boolean }) {
       base + (keyId ? "?key=" + encodeURIComponent(keyId) : ""),
       refresh,
     );
+  const canIssue = apiKeysState === "available" && availability === "available";
+  const scope = scopes.includes("scan:write")
+    ? scopes.includes("scan:read")
+      ? "write"
+      : "write-only"
+    : "read";
+  function failed(e: unknown) {
+    setError((e as Error).message);
+    if (e instanceof APIError && e.status === 403) {
+      sessionCoordinator.flush();
+      reconcileSession(user.id);
+    }
+  }
+  async function currentIssuance() {
+    const config = await api("/auth/config");
+    setAvailability(config.api_keys_state);
+    const me = await api("/auth/me");
+    if (me.id !== user.id)
+      throw new APIError(
+        409,
+        t(
+          "계정이 변경되었습니다. 폼을 다시 여세요.",
+          "Account changed; reopen the form.",
+        ),
+      );
+    return config.api_keys_state === "available";
+  }
+  async function prepare(k: any) {
+    if (pending.current || token || uncertain) return;
+    const receipt = issuance.beginSubmission(null);
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      if (!(await currentIssuance())) return;
+      const keys = await api("/api-keys?key=" + encodeURIComponent(k.id));
+      const current = keys.find((item: any) => item.id === k.id);
+      if (!current)
+        throw new Error(
+          t(
+            "선택한 API 키를 찾을 수 없습니다.",
+            "The selected API key was not found.",
+          ),
+        );
+      if (!issuance.markSubmitted(receipt)) return;
+      setName(current.name);
+      setScopes([...current.scopes]);
+      setReplacement(current.id);
+      createForm.current?.querySelector("input")?.focus();
+    } catch (e) {
+      if (issuance.isCurrentSubmission(receipt)) failed(e);
+    } finally {
+      if (issuance.isCurrentSubmission(receipt)) {
+        pending.current = false;
+        setBusy(false);
+      }
+    }
+  }
   async function create(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = e.currentTarget,
-      data = new FormData(form);
+    if (pending.current || !canIssue || uncertain || token) return;
+    const receipt = issuance.beginSubmission({
+      name,
+      days: Number(days),
+      scopes: [...scopes],
+    });
+    pending.current = true;
     setBusy(true);
+    setError("");
+    let sent = false;
     try {
-      const r = await send("/api-keys", {
-        name: data.get("name"),
-        days: Number(data.get("days")),
-        scopes:
-          data.get("scope") === "read"
-            ? ["scan:read"]
-            : ["scan:read", "scan:write"],
-      });
+      if (!(await currentIssuance()) || !issuance.isCurrentSubmission(receipt))
+        return;
+      sent = true;
+      const r = await send("/api-keys", receipt.fields);
+      if (!issuance.isCurrentSubmission(receipt)) return;
+      if (
+        typeof r?.token !== "string" ||
+        !/^aag_sk_[A-Za-z0-9_-]{43}$/.test(r.token)
+      )
+        throw new TypeError(
+          t(
+            "발급 응답에서 키 원문을 확인할 수 없습니다.",
+            "The issuance response did not contain a usable key secret.",
+          ),
+        );
+      // A newer edit can retain its input while the accepted token is shown once.
       setToken(r.token);
-      form.reset();
+      setRefresh((x) => x + 1);
+      if (!issuance.markSubmitted(receipt)) return;
+      setName("");
+      setScopes(["scan:read", "scan:write"]);
+      setDays("90");
+    } catch (e) {
+      if (!issuance.isCurrentSubmission(receipt)) return;
+      failed(e);
+      if (
+        sent &&
+        (e instanceof TypeError || (e instanceof APIError && e.status >= 500))
+      )
+        setUncertain(true);
+    } finally {
+      if (issuance.isCurrentSubmission(receipt)) {
+        pending.current = false;
+        setBusy(false);
+      }
+    }
+  }
+  async function checkKeys() {
+    if (pending.current) return;
+    const receipt = issuance.beginSubmission(null);
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      await api(base + (keyId ? "?key=" + encodeURIComponent(keyId) : ""));
+      if (!admin) await currentIssuance();
+      if (!issuance.isCurrentSubmission(receipt)) return;
+      setUncertain(false);
       setRefresh((x) => x + 1);
     } catch (e) {
-      setError((e as Error).message);
+      if (issuance.isCurrentSubmission(receipt)) failed(e);
     } finally {
-      setBusy(false);
+      if (issuance.isCurrentSubmission(receipt)) {
+        pending.current = false;
+        setBusy(false);
+      }
     }
   }
   async function revoke(e: FormEvent) {
     e.preventDefault();
+    if (pending.current || uncertain || reason.trim().length < 5) return;
+    const receipt = revocation.beginSubmission({ id: selected, reason });
+    pending.current = true;
     setBusy(true);
+    setError("");
     try {
-      await send(`${base}/${selected}/revoke`, { reason });
+      await send(base + "/" + receipt.fields.id + "/revoke", {
+        reason: receipt.fields.reason,
+      });
+      if (!revocation.isCurrentSubmission(receipt)) return;
+      setRefresh((x) => x + 1);
+      if (!revocation.markSubmitted(receipt)) return;
       setSelected("");
       setReason("");
-      setRefresh((x) => x + 1);
     } catch (e) {
-      setError((e as Error).message);
+      if (!revocation.isCurrentSubmission(receipt)) return;
+      failed(e);
+      if (e instanceof TypeError || (e instanceof APIError && e.status >= 500))
+        setUncertain(true);
     } finally {
-      setBusy(false);
+      if (revocation.isCurrentSubmission(receipt)) {
+        pending.current = false;
+        setBusy(false);
+      }
     }
   }
   return (
@@ -108,7 +241,34 @@ export function Keys({ admin = false }: { admin?: boolean }) {
         />
       )}
       <ErrorMessage value={error} />
-      {!admin && <KeysUnavailable />}
+      {busy && <p role="status">{t("요청 처리 중…", "Processing request…")}</p>}
+      {!admin && (
+        <KeysUnavailable
+          state={apiKeysState === "available" ? availability : apiKeysState}
+        />
+      )}
+      {uncertain && (
+        <div className="notice" role="status">
+          <p>
+            {t(
+              "요청 결과를 확인할 수 없습니다. 키 목록을 먼저 확인하세요. 발급된 키 원문은 다시 조회할 수 없으므로 사용할 수 없는 새 키는 별도로 폐기하세요. 자동으로 재발급하지 않습니다.",
+              "The request outcome is unknown. Check the key list first. An issued secret cannot be retrieved; revoke any unusable new key separately. Issuance is not retried automatically.",
+            )}
+          </p>
+          <button disabled={busy} onClick={checkKeys}>
+            {t("현재 키 목록 확인", "Check current keys")}
+          </button>
+        </div>
+      )}
+      {replacement && (
+        <p className="notice" role="status">
+          {t(
+            "새 키를 도구에 반영한 뒤 이전 키를 별도로 폐기하세요.",
+            "Update your tool with the new key, then revoke the previous key separately.",
+          )}{" "}
+          <code>{replacement}</code>
+        </p>
+      )}
       {token && (
         <section className="one-time" role="status">
           <h2>{t("키가 발급되었습니다", "Your key is ready")}</h2>
@@ -130,20 +290,33 @@ export function Keys({ admin = false }: { admin?: boolean }) {
       {!admin && (
         <section className="panel form-panel">
           <h2>{t("새 API 키", "New API key")}</h2>
-          <form onSubmit={create} className="inline-form">
+          <form ref={createForm} onSubmit={create} className="inline-form">
             <label>
               {t("키 이름", "Name")}
               <input
                 name="name"
+                value={name}
+                onChange={(e) => {
+                  issuance.touch();
+                  setName(e.target.value);
+                }}
                 placeholder="Claude Code / CI"
                 maxLength={100}
                 required
-                disabled={apiKeysState !== "available"}
+                disabled={!canIssue}
               />
             </label>
             <label>
               {t("만료", "Expires in")}
-              <select name="days" disabled={apiKeysState !== "available"}>
+              <select
+                name="days"
+                value={days}
+                onChange={(e) => {
+                  issuance.touch();
+                  setDays(e.target.value);
+                }}
+                disabled={!canIssue}
+              >
                 <option value="90">90 {t("일", "days")}</option>
                 <option value="30">30 {t("일", "days")}</option>
                 <option value="7">7 {t("일", "days")}</option>
@@ -151,14 +324,29 @@ export function Keys({ admin = false }: { admin?: boolean }) {
             </label>
             <label>
               {t("권한", "Scope")}
-              <select name="scope" disabled={apiKeysState !== "available"}>
+              <select
+                name="scope"
+                value={scope}
+                onChange={(e) => {
+                  issuance.touch();
+                  setScopes(
+                    e.target.value === "read"
+                      ? ["scan:read"]
+                      : e.target.value === "write-only"
+                        ? ["scan:write"]
+                        : ["scan:read", "scan:write"],
+                  );
+                }}
+                disabled={!canIssue}
+              >
                 <option value="write">scan:read + scan:write</option>
                 <option value="read">scan:read</option>
+                <option value="write-only">scan:write</option>
               </select>
             </label>
             <button
               className="primary"
-              disabled={busy || apiKeysState !== "available"}
+              disabled={busy || !canIssue || uncertain || !!token}
             >
               {t("발급", "Create key")}
             </button>
@@ -201,10 +389,23 @@ export function Keys({ admin = false }: { admin?: boolean }) {
                     <code>{k.display_key}</code>
                   </div>
                   <Badge value={k.state} />
+                  {!admin && (
+                    <button
+                      disabled={busy || !canIssue || uncertain || !!token}
+                      onClick={() => prepare(k)}
+                    >
+                      {t("새 키로 교체 준비", "Prepare replacement key")}
+                    </button>
+                  )}
                   {k.state === "active" && (
                     <button
                       className="danger-button"
-                      onClick={() => setSelected(k.id)}
+                      disabled={busy || uncertain}
+                      onClick={() => {
+                        revocation.touch();
+                        setSelected(k.id);
+                        setReason("");
+                      }}
                     >
                       {t("폐기", "Revoke")}
                     </button>
@@ -260,16 +461,29 @@ export function Keys({ admin = false }: { admin?: boolean }) {
                       {t("폐기 사유", "Revocation reason")}
                       <input
                         value={reason}
-                        onChange={(e) => setReason(e.target.value)}
+                        onChange={(e) => {
+                          revocation.touch();
+                          setReason(e.target.value);
+                        }}
                         minLength={5}
                         required
                       />
                     </label>
                     <div className="toolbar">
-                      <button type="button" onClick={() => setSelected("")}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          revocation.touch();
+                          setSelected("");
+                          setReason("");
+                        }}
+                      >
                         {t("취소", "Cancel")}
                       </button>
-                      <button className="danger-button" disabled={busy}>
+                      <button
+                        className="danger-button"
+                        disabled={busy || uncertain}
+                      >
                         {t("키 폐기 확인", "Confirm revocation")}
                       </button>
                     </div>

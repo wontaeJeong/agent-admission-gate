@@ -6,6 +6,7 @@ JWT signature/claims, cookie, ownership and frontend handlers remain in use.
 
 import base64
 import hashlib
+import json
 import os
 import ssl
 import threading
@@ -32,7 +33,7 @@ from cryptography.x509.oid import NameOID
 class AuthorizationProvider(BaseHTTPRequestHandler):
     def do_GET(self):
         query = parse_qs(urlsplit(self.path).query)
-        assert urlsplit(self.path).path == "/authorize"
+        assert urlsplit(self.path).path.endswith("/authorize")
         assert query["code_challenge_method"] == ["S256"]
         cookies = SimpleCookie(self.headers.get("Cookie", ""))
         account = cookies["oidc_test_account"].value if "oidc_test_account" in cookies else "alice"
@@ -81,13 +82,15 @@ tls.load_cert_chain(cert_path, key_path)
 https_provider.socket = tls.wrap_socket(https_provider.socket, server_side=True)
 threading.Thread(target=https_provider.serve_forever, daemon=True).start()
 ISSUER = "https://localhost:" + str(https_provider.server_port)
+if os.environ.get("AAG_D3_FIXTURE") == "true":
+    ISSUER += "/realms/browser"
 CLIENT = "aag-browser-test"
 private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
 def provider(request):
     assert request.url.host == "localhost" and request.url.port == https_provider.server_port
-    if request.url.path == "/.well-known/openid-configuration":
+    if request.url.path.endswith("/.well-known/openid-configuration"):
         return httpx.Response(
             200,
             json={
@@ -97,7 +100,7 @@ def provider(request):
                 "jwks_uri": ISSUER + "/jwks",
             },
         )
-    assert request.url.path == "/token"
+    assert request.url.path.endswith("/token")
     body = parse_qs(request.content.decode())
     code = parse_qs(body["code"][0])
     challenge = (
@@ -137,9 +140,41 @@ app = create_app(
         public_url=os.environ["AAG_PUBLIC_URL"],
         database_url=os.environ["AAG_DATABASE_URL"],
         cookie_secure=False,
-        oidc_lifecycle_sync_confirmed=False,
+        oidc_lifecycle_sync_confirmed=os.environ.get("AAG_D3_FIXTURE") == "true",
+        api_keys_enabled=os.environ.get("AAG_D3_FIXTURE") == "true" and os.environ.get("AAG_D3_ISSUANCE_DISABLED") != "true",
+        oidc_lifecycle_client_id="fixture",
+        oidc_lifecycle_client_secret="synthetic-service-secret",
+        oidc_upstream_verifier_url="https://verifier.example.test/check",
+        oidc_upstream_verifier_secret="synthetic-verifier-secret",
+        oidc_access_group_id="access",
+        oidc_admin_group_id="admin",
+        oidc_reviewer_group_id="reviewer",
     )
 )
+if os.environ.get("AAG_D3_FIXTURE") == "true":
+    # Mock only external Keycloak/verifier HTTP. Production qualification remains active.
+    from aag import identity_lifecycle
+    real_sync_client = httpx.Client
+
+    def lifecycle_provider(request):
+        if request.url.host == "verifier.example.test":
+            data = json.loads(request.content)
+            groups = ["access", "admin", "reviewer"] if data["subject"] == "alice" else ["access"]
+            return httpx.Response(200, json={**data, "source_available": True,
+                "enabled": True, "keycloak_access": True, "groups": groups, "checked_at": time.time()})
+        if request.url.path.endswith("/token"):
+            return httpx.Response(200, json={"access_token": "synthetic-service-token"})
+        subject = request.url.path.split("/users/")[1].split("/")[0]
+        assert subject in {"alice", "bob"}
+        if request.url.path.endswith("/groups"):
+            groups = ["access", "admin", "reviewer"] if subject == "alice" else ["access"]
+            return httpx.Response(200, json=[{"id": group} for group in groups[int(request.url.params["first"]):]])
+        return httpx.Response(200, json={"id": subject, "enabled": True})
+
+    identity_lifecycle.httpx.Client = lambda **kw: real_sync_client(
+        transport=httpx.MockTransport(lifecycle_provider), **kw
+    )
+
 app.state.db.create()
 with app.state.db.session.begin() as s:
     for account in ("alice", "bob"):
@@ -240,3 +275,17 @@ if expiration_mode:
             app.state.settings.expiry_reminders_enabled_at = now-60
         expiration_reminders.emit_due_expirations(app.state.db, now=now-10800 if expiration_mode == "delayed" else now)
         expiration_reminders.emit_resource_notification = producer
+
+if os.environ.get("AAG_D3_FIXTURE") == "true":
+    from aag.auth import digest
+    from aag.models import APIKey, ExceptionRule
+    with app.state.db.session.begin() as s:
+        s.get(User, "a1-alice").role = "admin"
+        s.add(APIKey(id="d3-key", owner_id="a1-alice", name="Build integration",
+                     digest=digest("aag_sk_synthetic_d3_old"), suffix="old",
+                     scopes=["scan:read"], expires_at=time.time()+3600))
+        s.add(ExceptionRule(id="d3-exception", created_by="a1-alice",
+                            source="synthetic-package.zip",
+                            reason="Synthetic original-content exception",
+                            fingerprint="c"*64, content_hash="a"*64,
+                            expires_at=time.time()-60))

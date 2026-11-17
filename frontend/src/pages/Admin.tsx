@@ -1,7 +1,10 @@
 import { useAccountMutation } from "../accountMutations";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
+import { useMemorySubmission } from "../useMemorySubmission";
+import { sessionCoordinator } from "../session";
 import { useSearchParams } from "react-router-dom";
-import { api, timestamp, type User } from "../api";
+import { api, APIError, timestamp, type User } from "../api";
 import {
   Badge,
   Code,
@@ -330,7 +333,13 @@ function Exceptions() {
       ? params.get("exception")
       : null;
   const send = useAccountMutation();
+  const { user, reconcileSession } = useApp();
+  const submission = useMemorySubmission();
+  const formRef = useRef<HTMLFormElement>(null);
+  const pending = useRef(false);
   const [refresh, setRefresh] = useState(0),
+    [busy, setBusy] = useState(false),
+    [uncertain, setUncertain] = useState(false),
     [error, setError] = useState(""),
     load = useLoad(
       "/admin/allowlist" +
@@ -340,44 +349,97 @@ function Exceptions() {
     t = useText();
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (pending.current || uncertain) return;
     const form = e.currentTarget,
       data = new FormData(form);
+    const receipt = submission.beginSubmission({
+      fingerprint: data.get("fingerprint"),
+      content_hash: data.get("content_hash"),
+      source: data.get("source"),
+      reason: data.get("reason"),
+      expires_at: new Date(String(data.get("expiry"))).getTime() / 1000,
+    });
+    pending.current = true;
+    setBusy(true);
+    setError("");
     try {
-      await send("/admin/allowlist", {
-        fingerprint: data.get("fingerprint"),
-        content_hash: data.get("content_hash"),
-        source: data.get("source"),
-        reason: data.get("reason"),
-        expires_at: new Date(String(data.get("expiry"))).getTime() / 1000,
-      });
+      await send("/admin/allowlist", receipt.fields);
+      if (!submission.isCurrentSubmission(receipt)) return;
+      setRefresh((x) => x + 1);
+      if (!submission.markSubmitted(receipt)) return;
       form.reset();
+    } catch (e) {
+      if (!submission.isCurrentSubmission(receipt)) return;
+      setError((e as Error).message);
+      if (e instanceof TypeError || (e instanceof APIError && e.status >= 500))
+        setUncertain(true);
+      if (e instanceof APIError && e.status === 403) {
+        sessionCoordinator.flush();
+        reconcileSession(user.id);
+      }
+    } finally {
+      if (submission.isCurrentSubmission(receipt)) {
+        pending.current = false;
+        setBusy(false);
+      }
+    }
+  }
+  async function checkExceptions() {
+    const receipt = submission.beginSubmission(null);
+    setBusy(true);
+    try {
+      await api(
+        "/admin/allowlist" +
+          (exceptionId ? "?exception=" + encodeURIComponent(exceptionId) : ""),
+      );
+      if (!submission.isCurrentSubmission(receipt)) return;
+      setUncertain(false);
+      setError("");
       setRefresh((x) => x + 1);
     } catch (e) {
-      setError((e as Error).message);
+      if (submission.isCurrentSubmission(receipt))
+        setError((e as Error).message);
+    } finally {
+      if (submission.isCurrentSubmission(receipt)) setBusy(false);
     }
   }
   return (
     <>
       <ErrorMessage value={error} />
+      {uncertain && (
+        <p className="notice" role="status">
+          {t(
+            "요청 결과가 불명확합니다. 현재 예외를 확인한 뒤 명시적으로 다시 제출하세요.",
+            "The request outcome is unknown. Check current exceptions before explicitly submitting again.",
+          )}{" "}
+          <button disabled={busy} onClick={checkExceptions}>
+            {t("현재 예외 확인", "Check current exceptions")}
+          </button>
+        </p>
+      )}
       <section className="panel form-panel">
         <h2>{t("만료되는 예외 등록", "Create an expiring exception")}</h2>
         <p>
           {t(
-            "정확한 소스와 발견 지문에만 적용됩니다. 기존 결과를 변경하지 않으며 재검사부터 적용됩니다.",
-            "Applies to one exact source and finding fingerprint on the next scan. Existing results are immutable.",
+            "정확한 소스, 내용 SHA256과 발견 지문에만 적용됩니다. 기존 결과를 변경하지 않으며 재검사부터 적용됩니다.",
+            "Applies to the exact source, content SHA256 and finding fingerprint on the next scan. Existing results are immutable.",
           )}
         </p>
-        <form onSubmit={submit}>
+        <form
+          ref={formRef}
+          onSubmit={submit}
+          onChange={() => submission.touch()}
+        >
           <label>
-            Source
+            {t("소스", "Source")}
             <input name="source" required />
           </label>
           <label>
-            Content SHA256
+            {t("내용 SHA256", "Content SHA256")}
             <input name="content_hash" pattern="[a-f0-9]{64}" required />
           </label>
           <label>
-            Finding fingerprint
+            {t("발견 지문", "Finding fingerprint")}
             <input name="fingerprint" pattern="[a-f0-9]{64}" required />
           </label>
           <label>
@@ -388,7 +450,7 @@ function Exceptions() {
             {t("허용 사유", "Reason")}
             <textarea name="reason" minLength={5} required />
           </label>
-          <button className="primary">
+          <button className="primary" disabled={busy || uncertain}>
             {t("예외 등록", "Create exception")}
           </button>
         </form>
@@ -408,7 +470,7 @@ function Exceptions() {
           {load.data?.length ? (
             load.data.map((e: any) => (
               <div
-                className="device-row"
+                className="device-row exception-row"
                 key={e.id}
                 aria-current={exceptionId === e.id ? "true" : undefined}
               >
@@ -421,6 +483,37 @@ function Exceptions() {
                   <h3>{e.source}</h3>
                   <p>{e.reason}</p>
                   <small>{timestamp(e.expires_at)}</small>
+                  <dl>
+                    <dt>{t("원래 내용 SHA256", "Original content SHA256")}</dt>
+                    <dd>
+                      <code>{e.content_hash}</code>
+                    </dd>
+                    <dt>
+                      {t("원래 발견 지문", "Original finding fingerprint")}
+                    </dt>
+                    <dd>
+                      <code>{e.fingerprint}</code>
+                    </dd>
+                  </dl>
+                  <p>
+                    {t(
+                      "소스를 다시 선택하거나 파일을 업로드해 검사한 뒤 새 내용 해시와 발견 지문을 검토하세요. 기존 예외의 범위는 변경되지 않습니다.",
+                      "Reselect this source or upload its file for a new scan, then review the new content hash and fingerprint. The original exception scope stays unchanged.",
+                    )}
+                  </p>
+                  <div className="toolbar">
+                    <Link className="button" to="/new">
+                      {t("소스 재검사", "Rescan source")}
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        formRef.current?.querySelector("input")?.focus();
+                      }}
+                    >
+                      {t("새 예외 검토", "Review a new exception")}
+                    </button>
+                  </div>
                 </div>
                 <Badge
                   value={
