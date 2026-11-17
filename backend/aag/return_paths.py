@@ -37,9 +37,31 @@ def normalize_return_to(value: str | None) -> str:
             return "/"
         for pattern, allowed in _ROUTES:
             if re.fullmatch(pattern, parsed.path):
-                query = urlencode([(k, v) for k, v in parse_qsl(parsed.query) if k in allowed])
+                pairs = parse_qsl(parsed.query)
+                history = re.fullmatch(r"/jobs/[A-Za-z0-9_-]+", parsed.path) and [
+                    v for k, v in pairs if k == "tab"
+                ] == ["history"]
+                query = urlencode(
+                    [
+                        (k, v)
+                        for k, v in pairs
+                        if k in allowed or (history and _history_filter(k, v))
+                    ]
+                )
                 target = parsed.path + ("?" + query if query else "")
                 return target if len(target) <= 2048 else "/"
     except (ValueError, UnicodeError):
         pass
     return "/"
+
+
+def _history_filter(key, value):
+    if key == "ref":
+        return len(value) <= 200
+    if key == "profile":
+        return value in {"static", "full"}
+    if key == "status":
+        return value in {"PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"}
+    if key in {"page", "page_size"} and re.fullmatch(r"[1-9][0-9]{0,8}", value):
+        return key == "page" or int(value) <= 100
+    return False

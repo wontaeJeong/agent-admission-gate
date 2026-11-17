@@ -77,3 +77,15 @@ def test_normalized_destination_fits_storage_limit():
     from aag.return_paths import normalize_return_to
 
     assert normalize_return_to("/jobs?q=" + "가" * 300) == "/"
+
+
+def test_history_filters_only_survive_on_history_tab():
+    from aag.return_paths import normalize_return_to
+
+    path = "/jobs/j?tab=history&ref=release&profile=full&status=COMPLETED&page=2&page_size=25"
+    assert normalize_return_to(path + "&token=secret") == path
+    assert normalize_return_to("/jobs/j?tab=meta&ref=release&page=2") == "/jobs/j?tab=meta"
+    assert (
+        normalize_return_to("/jobs/j?tab=history&profile=invalid&status=NO&page=0&page_size=101")
+        == "/jobs/j?tab=history"
+    )

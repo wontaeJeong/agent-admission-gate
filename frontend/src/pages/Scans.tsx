@@ -5,6 +5,7 @@ import {
   selectFinding,
   findingHref,
 } from "../findingSelection";
+import { ScanHistory } from "./ScanHistory";
 import { ScanFollowUp } from "./ReviewActivity";
 import { SummaryTools } from "./ScanSummary";
 import { rerunFields, snapshotCommit, type RerunMode } from "./scanRerun";
@@ -805,6 +806,9 @@ export function JobDetail() {
               description={job.source}
               actions={
                 <>
+                  <ListLink resource="jobs" to={"/jobs/" + id + "?tab=history"}>
+                    {t("이전 검사와 비교", "Compare with previous scan")}
+                  </ListLink>
                   <SummaryTools
                     id={id!}
                     findingLink={selectedFindingLink(job, params)}
@@ -898,6 +902,7 @@ export function JobDetail() {
                 ["engines", t("엔진", "Engines")],
                 ["meta", t("메타데이터", "Metadata")],
                 ["timeline", t("타임라인", "Timeline")],
+                ["history", t("이력", "History")],
                 ["raw", "Raw JSON"],
               ]}
               selected={tab}
@@ -909,6 +914,7 @@ export function JobDetail() {
                 })
               }
             />
+            {tab === "history" && <ScanHistory key={job.id} job={job} />}
             {tab === "admission" && (
               <>
                 <DraftRecovery draft={draft} />

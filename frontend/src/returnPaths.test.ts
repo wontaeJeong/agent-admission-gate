@@ -40,3 +40,17 @@ it.each([
 it("caps the encoded destination length before storage", () => {
   expect(normalizeReturnTo("/jobs?q=" + "가".repeat(300))).toBe("/");
 });
+
+it("preserves history filters only for the history tab", () => {
+  const path =
+    "/jobs/j?tab=history&ref=release&profile=full&status=COMPLETED&page=2&page_size=25";
+  expect(normalizeReturnTo(path + "&token=secret")).toBe(path);
+  expect(normalizeReturnTo("/jobs/j?tab=meta&ref=release&page=2")).toBe(
+    "/jobs/j?tab=meta",
+  );
+  expect(
+    normalizeReturnTo(
+      "/jobs/j?tab=history&profile=invalid&status=NO&page=0&page_size=101",
+    ),
+  ).toBe("/jobs/j?tab=history");
+});

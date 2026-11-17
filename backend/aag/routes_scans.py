@@ -28,6 +28,7 @@ from .review_workflow import (
     transition_review,
     visible_review,
 )
+from .scan_history import history_item, history_query
 from .scan_summary import build_scan_summary
 from .schemas import (
     CommentRequest,
@@ -154,6 +155,43 @@ def get_scan(job_id: str, request: Request, a: Actor = Depends(actor)):
             review = s.scalar(query)
             payload["review"] = {"id": review.id, "status": review.status} if review else None
         return payload
+
+
+@router.get("/scans/{job_id}/history")
+def scan_history(
+    job_id: str,
+    request: Request,
+    ref: str = Query("", max_length=200),
+    profile: Literal["", "static", "full"] = "",
+    status: Literal["", "PENDING", "RUNNING", "COMPLETED", "FAILED", "CANCELLED"] = "",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    a: Actor = Depends(actor),
+):
+    a.scope("scan:read")
+    allowed = {"ref", "profile", "status", "page", "page_size"}
+    if set(request.query_params) - allowed or any(
+        len(request.query_params.getlist(key)) > 1 for key in allowed
+    ):
+        raise HTTPException(422, "Unsupported history query")
+    with request.app.state.db.session() as s:
+        reference = owned_job(s, job_id, a)
+        query = history_query(a, reference)
+        for column, value in ((Job.ref, ref), (Job.profile, profile), (Job.status, status)):
+            if value:
+                query = query.where(column == value)
+        total = s.scalar(select(func.count()).select_from(query.subquery()))
+        rows = s.scalars(
+            query.order_by(Job.created_at.desc(), Job.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return {
+            "items": [history_item(s, a, job) for job in rows],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+        }
 
 
 @router.get("/scans/{job_id}/summary")

@@ -46,17 +46,21 @@
 
 ## B2 동일 대상 이력
 
-**수정 파일:** backend/aag/routes_scans.py; frontend/src/pages/Scans.tsx.
+**수정 파일:** backend/aag/routes_scans.py, backend/aag/return_paths.py; frontend/src/pages/Scans.tsx, frontend/src/App.tsx, frontend/src/returnPaths.ts, frontend/src/styles.css; 양쪽 return-path 테스트와 요구사항 추적 문서.
 
 **생성 파일:** backend/aag/scan_history.py; frontend/src/pages/ScanHistory.tsx; backend/tests/test_scan_history.py; frontend/e2e/scan-history.spec.ts.
 
 **인터페이스:** GET /api/scans/{id}/history?ref=&profile=&status=&page=&page_size=는 items/total/page/page_size를 반환한다. history_query(actor, reference_job)는 Git source+owner 또는 ZIP root+owner를 적용한다. 허용된 interactive 사용자에게만 review summary를 추가한다.
 
-- [ ] **1. 대상 분리 검증:** test_history_same_git_different_refs_included, test_history_excludes_other_owner, test_api_key_owner_scope, test_zip_root_not_filename, test_filters_and_page_count를 작성한다.
-- [ ] **2. 실패 확인:** uv run pytest backend/tests/test_scan_history.py -q.
-- [ ] **3. API 구현:** reference의 owned_job 확인 후 같은 owner query를 만든다. ref/profile/status를 count와 rows에 동일 적용한다. page_size 기본25/최대100, created_at desc/id desc로 안정 정렬한다. staff라도 다른 owner 이력을 자동 추가하지 않는다.
-- [ ] **4. 화면 구현:** commit/ref/profile/판정/coverage/cache/검토 상태를 표시한다.2건 선택·비교 진입·원래 목록 복귀를 제공하고 이력이 없으면 재검사 링크를 보여준다.
+- [x] **1. 대상 분리 검증:** test_history_same_git_different_refs_included, test_history_excludes_other_owner, test_api_key_owner_scope, test_zip_root_not_filename, test_filters_and_page_count를 작성한다.
+- [x] **2. 실패 확인:** uv run pytest backend/tests/test_scan_history.py -q.
+- [x] **3. API 구현:** reference의 owned_job 확인 후 같은 owner query를 만든다. ref/profile/status를 count와 rows에 동일 적용한다. page_size 기본25/최대100, created_at desc/id desc로 안정 정렬한다. staff라도 다른 owner 이력을 자동 추가하지 않는다.
+- [x] **4. 화면 구현:** commit/ref/profile/판정/coverage/cache/검토 상태를 표시한다.2건 선택·비교 진입·원래 목록 복귀를 제공하고 이력이 없으면 재검사 링크를 보여준다.
 - [ ] **5. PR:** 대상 pytest·scan-history E2E로 Git/ZIP, 권한, filter/pagination, 모바일 표를 확인한다. 이미지와 함께 feat: navigate source scan history로 커밋·PR을 만든다.
+
+**구현 상태 (2026-11-17):** 단계1–4 구현. history API는 기준 작업의 owned_job 확인 후 Git 정규 source+owner 또는 ZIP 명시 root+owner를 적용하며 API 키 검토 섹션은 생략한다. 실제 SQLite/PostgreSQL 대상14개 및 history/return-path 대상43개, 신규 Playwright6개 통과. 최종 전체 검증·독립 검토·PR은 controller gate다. C3 선행 계약은 [PR #23](https://github.com/wontaeJeong/agent-admission-gate/pull/23) 기준이다.
+
+**화면/후속 계약:** 기존 상세의 /jobs/{id}?tab=history에 ref/profile/status/page/page_size를 둔다. SSO 복귀 allowlist는 history tab일 때만 유효한 이력 필터를 추가로 유지한다. 두 행은 오래된 것을 baseline, 최신을 current로 기본 선택하며 사용자가 바꿀 수 있다. /jobs/{current_id}/compare?baseline={baseline_id}는 양쪽 현재 조회 권한을 확인한 메타데이터 화면으로 처리한다. 컨트롤러가 확정한 B2 범위이며 발견 분류·비교 API를 선구현하지 않는다. B3는 ScanHistory.tsx의 SelectedScans/SelectedPair 진입을 ScanCompare로 확장/교체한다. ListLink/ListBackLink는 계정별 검증된 원래 검사 목록 복귀를 유지한다. 스타일 변경은 기존 panel 간격만 적용하며 색상 토큰을 추가하지 않는다.
 
 **완료:** F05 이력 부분. 비교할2건과 baseline/current 구분을 제공한다.
 
