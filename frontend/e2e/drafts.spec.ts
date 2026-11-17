@@ -23,6 +23,9 @@ const job = {
   result: { findings: [], engines: [], coverage_complete: true },
 };
 async function fixture(page: Page) {
+  await page.route("**/api/reviews/*/events*", (route) =>
+    route.fulfill({ json: { items: [], next_cursor: null } }),
+  );
   let account = "reviewer",
     qualified = true,
     status = "pending",
@@ -67,6 +70,10 @@ async function fixture(page: Page) {
         requester_id: "requester",
         reason: "Synthetic request context",
         status,
+        revision: status === "pending" ? 1 : 2,
+        workflow_state: status === "pending" ? "waiting" : "closed",
+        assignee_id: null,
+        assignee: null,
         reviewer_id: status === "pending" ? null : "other-reviewer",
         decision_reason: status === "pending" ? null : "Latest server decision",
         created_at: 1760000003,
@@ -723,6 +730,10 @@ for (const kind of ["scan", "review"] as const) {
           job_id: "other-job",
           requester_id: "requester",
           reason: "Other target context",
+          revision: 1,
+          workflow_state: "waiting",
+          assignee_id: null,
+          assignee: null,
           status: "pending",
           reviewer_id: null,
           decision_reason: null,

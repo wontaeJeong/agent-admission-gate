@@ -142,3 +142,15 @@ export function number(value: number | null | undefined) {
     ? "—"
     : value.toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
+
+export type ReviewAssignee = {
+  id: string;
+  name: string;
+  active: boolean;
+  qualified: boolean;
+};
+export type ReviewWorkflowState =
+  | "waiting"
+  | "in_review"
+  | "changes_requested"
+  | "closed";

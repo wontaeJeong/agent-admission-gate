@@ -104,3 +104,18 @@ it("does not persist unsafe URL or arbitrary history identity fields", () => {
   expect([...values.values()].join("")).not.toContain("synthetic");
   expect(restoreListEntry("alice", "jobs", entry, "/jobs")).toBeNull();
 });
+it("preserves review workflow filters and literal all search through saved views and return", () => {
+  const params = new URLSearchParams(
+    "tab=actionable&stage=in_review&assignee=me&q=all&sort=oldest",
+  );
+  expect(filtersFromSearch("reviews", params)).toEqual({
+    version: 1,
+    tab: "actionable",
+    stage: "in_review",
+    assignee: "me",
+    q: "all",
+    sort: "oldest",
+  });
+  rememberList("alice", "reviews", "/reviews?" + params, 920);
+  expect(restoreList("alice", "reviews")?.scroll_y).toBe(920);
+});

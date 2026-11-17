@@ -9,6 +9,7 @@ from sqlalchemy import Integer, case, cast, func, select
 from .auth import Actor, actor
 from .job_query import job_scope_filters, utc_window_start
 from .models import Job, Review, Usage
+from .review_query import review_queue_predicates
 from .usage import MCP_HTTP_START_ID, legacy_mcp_tool_filter, rest_http_filter, usage_unit
 
 router = APIRouter(prefix="/api")
@@ -116,9 +117,19 @@ def metrics(
             .mappings()
             .all()
         )
-        rq = select(Review).where(Review.status == "pending")
-        if scope == "personal":
-            rq = rq.where(Review.requester_id == a.id)
+        rq = select(Review).where(
+            *review_queue_predicates(a, "mine" if scope == "personal" else "pending"),
+            Review.status == "pending",
+        )
+        actionable = (
+            s.scalar(
+                select(func.count())
+                .select_from(Review)
+                .where(*review_queue_predicates(a, "actionable"))
+            )
+            if a.reviewer
+            else 0
+        )
         pending = s.scalar(select(func.count()).select_from(rq.subquery()))
         oldest = s.scalar(
             select(func.min(Review.created_at)).where(Review.id.in_(select(rq.subquery().c.id)))
@@ -150,6 +161,7 @@ def metrics(
             "statuses": statuses,
             "total_scans": sum(statuses.values()),
             "pending_reviews": pending,
+            "actionable_reviews": actionable,
             "oldest_review_seconds": time.time() - oldest if oldest else None,
             "api": request_stats(Usage.kind == "api"),
             "rest": request_stats(rest_http_filter()),

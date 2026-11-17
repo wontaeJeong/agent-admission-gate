@@ -8,7 +8,7 @@ export type ListState = {
 export type ViewFilters = { version: number; [key: string]: string | number };
 const keys: Record<ListResource, string[]> = {
   jobs: ["scope", "days", "status", "verdict", "q", "mine"],
-  reviews: ["tab", "status"],
+  reviews: ["tab", "status", "stage", "assignee", "q", "sort"],
 };
 function validURL(resource: ListResource, value: unknown): value is string {
   if (

@@ -129,6 +129,7 @@ routes_identity.jwt.PyJWKClient = lambda uri: SimpleNamespace(
 
 app = create_app(
     Settings(
+        review_workflow_enabled=os.environ.get("AAG_C1_FIXTURE") == "true",
         environment="test",
         auth_mode="oidc",
         oidc_issuer=ISSUER,
@@ -142,7 +143,7 @@ app = create_app(
 app.state.db.create()
 with app.state.db.session.begin() as s:
     for account in ("alice", "bob"):
-        s.add(User(id="a1-" + account, subject=ISSUER + "|" + account, name=account, role="user"))
+        s.add(User(id="a1-" + account, subject=ISSUER + "|" + account, name=account, role="admin" if os.environ.get("AAG_C1_FIXTURE") == "true" and account == "alice" else "user", reviewer=os.environ.get("AAG_C1_FIXTURE") == "true"))
     s.flush()
     s.add(
         Job(

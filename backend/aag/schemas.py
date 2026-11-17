@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictInt, model_validator
 
 
 class Login(BaseModel):
@@ -63,6 +63,8 @@ class Reason(BaseModel):
 
 
 class ReviewDecision(Reason):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: StrictInt | None = Field(default=None, ge=1)
     decision: Literal["approved", "rejected"]
 
 
@@ -94,3 +96,12 @@ class ExceptionRequest(Reason):
     content_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     source: str = Field(max_length=2048)
     expires_at: float
+
+
+class ReviewClaim(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: StrictInt = Field(ge=1)
+
+
+class ReviewRelease(ReviewClaim):
+    reason: str | None = Field(default=None, min_length=5, max_length=4000)

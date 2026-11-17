@@ -24,7 +24,17 @@ const routes: [RegExp, string[]][] = [
   [new RegExp("^/new$"), ["from", "mode"]],
   [
     new RegExp("^/reviews$"),
-    ["assignee", "page", "q", "scope", "status", "tab", "workflow"],
+    [
+      "assignee",
+      "page",
+      "q",
+      "scope",
+      "status",
+      "tab",
+      "workflow",
+      "stage",
+      "sort",
+    ],
   ],
   [new RegExp("^/reviews/[A-Za-z0-9_-]+$"), ["tab"]],
   [new RegExp("^/boards$"), ["kind", "page", "q"]],

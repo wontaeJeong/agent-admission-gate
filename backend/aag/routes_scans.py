@@ -1,5 +1,4 @@
 import asyncio
-import time
 from typing import Literal
 
 from fastapi import (
@@ -13,17 +12,19 @@ from fastapi import (
     Response,
     UploadFile,
 )
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 
 from .auth import Actor, actor
 from .db import audit, record
 from .job_query import job_scope_filters, utc_window_start
-from .models import Comment, Job, Review, User
+from .models import Comment, Job, Review, ReviewEvent, User
 from .notifications import emit_notification
+from .review_query import review_queue_predicates
+from .review_workflow import decide_review, review_dto, transition_review, visible_review
 from .scan_summary import build_scan_summary
-from .schemas import CommentRequest, Reason, ReviewDecision, ScanRequest
-from .service import TERMINAL, owned_job
+from .schemas import CommentRequest, Reason, ReviewClaim, ReviewDecision, ReviewRelease, ScanRequest
+from .service import owned_job
 
 router = APIRouter(prefix="/api")
 
@@ -333,7 +334,7 @@ def request_review(job_id: str, data: Reason, request: Request, a: Actor = Depen
             emit_notification(
                 s, "review.requested", job, reviewers, "review.requested:" + review.id, review.id
             )
-            return record(review)
+            return review_dto(s, review)
     except IntegrityError:
         # Another request can win after the duplicate check. Preserve unrelated DB errors.
         with request.app.state.db.session() as s:
@@ -347,26 +348,37 @@ def request_review(job_id: str, data: Reason, request: Request, a: Actor = Depen
 @router.get("/reviews")
 def reviews(
     request: Request,
-    tab: Literal["pending", "mine", "approved", "all"] = "pending",
-    status: Literal["pending", "approved", "rejected"] | None = None,
+    tab: Literal["pending", "mine", "approved", "all", "actionable"] = "pending",
+    status: Literal["pending", "approved", "rejected", "withdrawn"] | None = None,
+    stage: Literal["waiting", "in_review", "changes_requested", "closed"] | None = None,
+    assignee: Literal["me", "unassigned", "any"] = "any",
+    q: str = Query("", max_length=200),
+    sort: Literal["newest", "oldest"] = "newest",
     page: int = Query(1, ge=1),
     a: Actor = Depends(actor),
 ):
     a.interactive()
-    query = select(Review)
-    if not a.staff or tab == "mine":
-        query = query.where(Review.requester_id == a.id)
-    if tab in {"pending", "approved"}:
-        query = query.where(Review.status == tab)
+    if tab == "actionable":
+        a.review()
+    query = select(Review).where(*review_queue_predicates(a, tab, stage, assignee))
+    if q:
+        query = query.where(
+            Review.job_id.in_(select(Job.id).where(Job.source.contains(q, autoescape=True)))
+        )
     if status:
         query = query.where(Review.status == status)
     with request.app.state.db.session() as s:
         total = s.scalar(select(func.count()).select_from(query.subquery()))
         return {
             "items": [
-                {**record(r), "source": s.get(Job, r.job_id).source}
+                {**review_dto(s, r), "source": s.get(Job, r.job_id).source}
                 for r in s.scalars(
-                    query.order_by(Review.created_at.desc()).offset((page - 1) * 25).limit(25)
+                    query.order_by(
+                        Review.created_at.asc() if sort == "oldest" else Review.created_at.desc(),
+                        Review.id,
+                    )
+                    .offset((page - 1) * 25)
+                    .limit(25)
                 )
             ],
             "total": total,
@@ -377,10 +389,8 @@ def reviews(
 def review_detail(review_id: str, request: Request, a: Actor = Depends(actor)):
     a.interactive()
     with request.app.state.db.session() as s:
-        r = s.get(Review, review_id)
-        if not r or (r.requester_id != a.id and not a.staff):
-            raise HTTPException(404, "Review not found")
-        return {**record(r), "job": record(s.get(Job, r.job_id))}
+        r = visible_review(s, a, review_id)
+        return {**review_dto(s, r), "job": record(s.get(Job, r.job_id))}
 
 
 @router.post("/reviews/{review_id}/decision")
@@ -389,39 +399,70 @@ def review_decision(
 ):
     a.review()
     with request.app.state.db.session.begin() as s:
-        r = s.get(Review, review_id)
-        if not r:
-            raise HTTPException(404, "Review not found")
-        if r.requester_id == a.id:
-            raise HTTPException(403, "Self-approval is not permitted")
-        job = s.get(Job, r.job_id)
-        if job.status not in TERMINAL or job.status != "COMPLETED":
-            raise HTTPException(409, "Scan must be completed")
-        # A human approval cannot turn missing scanner coverage into a passing admission.
-        if data.decision == "approved" and not job.result.get("coverage_complete"):
-            raise HTTPException(409, "Complete required scanners and rescan before approval")
-        changed = s.execute(
-            update(Review)
-            .where(Review.id == review_id, Review.status == "pending")
-            .values(
-                status=data.decision,
-                reviewer_id=a.id,
-                decision_reason=data.reason,
-                decided_at=time.time(),
+        return decide_review(s, a, review_id, data)
+
+
+def require_review_transition(request, a):
+    a.interactive()
+    if request.headers.get("x-aag-account") != a.id:
+        raise HTTPException(409, "Account context required")
+    if not request.app.state.settings.review_workflow_enabled:
+        raise HTTPException(404, "Review workflow disabled")
+
+
+@router.post("/reviews/{review_id}/claim")
+def claim_review(review_id: str, data: ReviewClaim, request: Request, a: Actor = Depends(actor)):
+    require_review_transition(request, a)
+    with request.app.state.db.session.begin() as s:
+        return transition_review(s, a, review_id, data.expected_revision, "claim")
+
+
+@router.post("/reviews/{review_id}/release")
+def release_review(
+    review_id: str, data: ReviewRelease, request: Request, a: Actor = Depends(actor)
+):
+    require_review_transition(request, a)
+    with request.app.state.db.session.begin() as s:
+        return transition_review(s, a, review_id, data.expected_revision, "release", data.reason)
+
+
+@router.get("/reviews/{review_id}/events")
+def review_events(
+    review_id: str,
+    request: Request,
+    after: str | None = Query(None, max_length=64),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
+    a: Actor = Depends(actor),
+):
+    with request.app.state.db.session() as s:
+        visible_review(s, a, review_id)
+        query = select(ReviewEvent).where(ReviewEvent.review_id == review_id)
+        if after:
+            if page != 1:
+                raise HTTPException(422, "Use page or after, not both")
+            cursor = s.get(ReviewEvent, after)
+            if not cursor or cursor.review_id != review_id:
+                raise HTTPException(422, "Invalid activity cursor")
+            query = query.where(
+                or_(
+                    ReviewEvent.created_at > cursor.created_at,
+                    and_(ReviewEvent.created_at == cursor.created_at, ReviewEvent.id > cursor.id),
+                )
             )
-        ).rowcount
-        if changed != 1:
-            raise HTTPException(409, "Review already decided")
-        job.effective_verdict = "ALLOW" if data.decision == "approved" else "BLOCK"
-        audit(
-            s,
-            a.id,
-            "review." + data.decision,
-            review_id,
-            reason=data.reason,
-            original_verdict=job.verdict,
+        rows = list(
+            s.scalars(
+                query.order_by(ReviewEvent.created_at, ReviewEvent.id)
+                .offset((page - 1) * page_size)
+                .limit(page_size + 1)
+            )
         )
-        emit_notification(
-            s, "review." + data.decision, job, [r.requester_id], "review.decided:" + r.id, r.id
-        )
-    return {"ok": True}
+        return {
+            "page": page,
+            "page_size": page_size,
+            "items": [
+                {**record(row), "actor_name": s.get(User, row.actor_id).name}
+                for row in rows[:page_size]
+            ],
+            "next_cursor": rows[page_size - 1].id if len(rows) > page_size else None,
+        }

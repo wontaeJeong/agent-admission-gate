@@ -194,7 +194,7 @@ export function SavedViews({
   resource: ListResource;
   beforeNavigate: () => void;
 }) {
-  const { user } = useApp(),
+  const { user, reviewWorkflow } = useApp(),
     t = useText(),
     send = useAccountMutation(),
     location = useLocation(),
@@ -514,7 +514,15 @@ export function SavedViews({
               >
                 {(resource === "jobs"
                   ? ["personal", "review", "all"]
-                  : ["mine", "pending", "approved", "all"]
+                  : [
+                      "mine",
+                      "pending",
+                      "approved",
+                      "all",
+                      ...(reviewWorkflow && user.reviewer
+                        ? ["actionable"]
+                        : []),
+                    ]
                 ).map((v) => (
                   <option key={v}>{v}</option>
                 ))}

@@ -22,6 +22,7 @@ title: 요구사항 추적과 검증 범위
 | user/admin + reviewer 직교 | auth.py + 모든 router | owner isolation, reviewer/admin, 비활성 사용자, last admin |
 | 1회 노출·90일 API 키 | APIKey, 개인/관리자 화면 | 해시 보관·만료·폐기·scope ceiling |
 | 8자리/10분 Device Code | DeviceClient/Grant | 승인/거절·poll interval·한 번 교환·만료·교환 시 사용자 확인; API 키 기본 비활성 |
+| 담당자·업무 이력 (C1/F06) | review_workflow.py, review_query.py, Review/ReviewEvent, review_claims migration, Reviews/ReviewActivity | revision CAS claim/release·독립 reviewer·자기 claim/승인 차단·현재 자격 재검사·기존 decision 배정 검사, stale release 사유 및 changes_requested 보존. 실제 SQLite/PostgreSQL 동시 HTTP 요청·backfill/왕복·이력 보호, 공개 업무 이력 owner/staff 조회. pending 전체 의미 유지, actionable/assignee/stage/q/sort 및 저장 보기/로그인 복귀/대시보드 predicate 일치. UI 사유 초안409·권한 상실·불명확한 저장 후 명시적 조회/재시도, dark/light/mobile 증거. flag 기본 false, off는 새 전이만 차단하고 확장 상태 읽기/배정 결정 권한 유지. C2 알림 확장·철회/보완, C3 후속 검토는 후속 범위. PR·독립 검토 대기 |
 | 검토·코멘트·감사 | Review/Comment/Audit | 자기 승인 금지, 중복 결정, 내부 코멘트 비노출 |
 | 개인 알림함·벨·수신 설정 | notifications.py, routes_notifications.py, Notifications.tsx | 실제 검사/검토/공개 코멘트 연결, 읽음·보관·복원·필터·페이지, 트랜잭션 중복 방지, 세션/권한/내부본문 격리, 90일 보존, 브라우저·모바일·계정 전환 |
 | 예외 allowlist | source/hash/fingerprint/expiry | 다른 소스/내용에 적용 금지, 다음 검사 적용 |

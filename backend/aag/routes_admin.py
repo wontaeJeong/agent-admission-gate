@@ -61,9 +61,12 @@ def users(request: Request, a: Actor = Depends(actor)):
 def update_user(user_id: str, data: UserPatch, request: Request, a: Actor = Depends(actor)):
     a.admin()
     with request.app.state.admin_lock, request.app.state.db.session.begin() as s:
-        # Lock active admins together to serialize last-admin changes on PostgreSQL.
+        # Serialize last-admin changes without blocking FK KEY SHARE from review
+        # events/recipient notifications while a target reviewer row is locked.
         admins = s.scalars(
-            select(User).where(User.role == "admin", User.active.is_(True)).with_for_update()
+            select(User)
+            .where(User.role == "admin", User.active.is_(True))
+            .with_for_update(key_share=True)
         ).all()
         user = s.get(User, user_id)
         if not user:

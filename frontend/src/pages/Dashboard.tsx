@@ -24,7 +24,7 @@ import { Badge, Empty, PageTitle, State, Tabs, useLoad } from "../components";
 import { number } from "../api";
 
 export function Dashboard() {
-  const { user } = useApp(),
+  const { user, reviewWorkflow } = useApp(),
     t = useText();
   const [days, setDays] = useState(30),
     [scope, setScope] = useState(
@@ -285,6 +285,29 @@ export function Dashboard() {
                   </div>
                   <ArrowUpRight size={18} />
                 </Link>
+                {reviewWorkflow && user.reviewer && (
+                  <Link to="/reviews?tab=actionable">
+                    <span className="attention-icon">
+                      <FileCheck2 size={20} />
+                    </span>
+                    <div>
+                      <h3>
+                        {data.actionable_reviews}{" "}
+                        {t(
+                          "건의 내가 처리할 요청",
+                          "actionable reviews for me",
+                        )}
+                      </h3>
+                      <p>
+                        {t(
+                          "미배정 또는 내 담당 검토 중 요청",
+                          "Unassigned or assigned to me; waiting or in review",
+                        )}
+                      </p>
+                    </div>
+                    <ArrowUpRight size={18} />
+                  </Link>
+                )}
                 <Link to={`/jobs?${scanParams}&status=FAILED`}>
                   <span className="attention-icon neutral">
                     <Activity size={20} />
