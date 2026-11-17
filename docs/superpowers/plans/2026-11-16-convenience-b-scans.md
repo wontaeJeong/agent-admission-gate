@@ -40,7 +40,7 @@
 - [x] **5. UI 구현:** /new?from=ID&mode=latest|snapshot은 GET 확인 후 URL/ref/profile을 채운다. 실패한 snapshot 재시도는 target_commit을 우선한다. PAT·ZIP은 재입력하고 초기 설정과 A2 복구 후보 중 사용자가 선택하게 한다. 이중 클릭을 막고 저장 여부가 불명확한 POST는 자동 재전송하지 않는다.
 - [ ] **6. PR:** 대상 pytest, source/cache/권한 회귀, frontend build, scan-rerun E2E, migration을 검증한다. latest/snapshot/ZIP 재선택/실패 이미지와 함께 feat: reuse scan settings and preserve source lineage로 커밋·PR을 만든다.
 
-**구현 상태 (2026-11-17):** 단계1–5 구현·RED/GREEN 확인. backend212개, frontend99개, 전체 E2E116개, Ruff·frontend build/format·docs build 통과; SQLite/PostgreSQL migration 왕복 및 화면7장 확인. 단계6의 독립 검토와 PR/CI/병합은 controller gate이며 PR 링크는 아직 대기 중이다.
+**구현 상태 (2026-11-17):** 단계1–5 구현·RED/GREEN 확인. backend212개, frontend99개, 전체 E2E116개, Ruff·frontend build/format·docs build 통과; SQLite/PostgreSQL migration 왕복 및 화면7장 확인. [PR #19](https://github.com/wontaeJeong/agent-admission-gate/pull/19) 생성됨. 독립 검토 I1의 신규 메타데이터 라벨 한·영 누락을 수정했으며 최종 검토·CI·병합은 controller gate다.
 
 **완료:** F01. C3·B2에서 origin_job_id/lineage_root_id를 사용할 수 있다.
 

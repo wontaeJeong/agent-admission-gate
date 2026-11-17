@@ -370,3 +370,9 @@
 - Two browser checks raced draft debounce or a same-path query transition and edited the departing form. Wait for visible saved-draft state and the destination form before testing late-response preservation; arbitrary sleeps do not prove lifecycle order.
 - Focused skip-link/scroll state initially misaligned desktop/mobile evidence; normal main-region focus, font readiness and top scroll corrected it without production CSS changes. A screenshot helper also assumed every state had an h1 and timed out on denied origins. Focus the existing main region and reset scroll after font readiness; do not hide the skip link or change production CSS for evidence.
 - An initial heredoc used a repository-relative path while already in `frontend`, so the test file was not written. Resolve paths against the command working directory before writes. Ruff also flagged two test import orders; run the configured formatter/import sorter before final validation.
+
+
+## 2026-11-17 — B1 review gate consistency
+
+- A binding Korean/English UI gap was initially reported as failed spec compliance but Minor/Approved. The verdict and severity were corrected to Important/Needs fixes; check that requirement gaps, issue grades and the final assessment agree before publishing a review.
+- A controller `send_message` to an idle reviewer queued instructions without starting work. `followup_task` resumed the reviewer; use followup for idle work and reserve send_message for an agent already running.

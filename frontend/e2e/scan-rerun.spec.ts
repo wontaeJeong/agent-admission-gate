@@ -16,12 +16,13 @@ const origin = {
   owner_id: "a1-alice",
   source: "https://github.com/example/synthetic.git",
   source_type: "git",
-  ref: "release",
+  ref: "release" as string | null,
   profile: "full",
   status: "COMPLETED",
   resolved_commit: sha as string | null,
   target_commit: null as string | null,
   rerun_mode: null as string | null,
+  lineage_root_id: "rerun-origin",
   result: {},
   review: null,
   created_at: 1,
@@ -113,6 +114,7 @@ test("snapshot retries stored target, keeps PAT private, and checks latest after
   await mockOrigin(page, {
     ...origin,
     status: "FAILED",
+    ref: null,
     resolved_commit: null,
     target_commit: sha,
     rerun_mode: "snapshot",
@@ -164,6 +166,23 @@ test("snapshot retries stored target, keeps PAT private, and checks latest after
   expect(posts).toBe(1);
   await page.setViewportSize({ width: 390, height: 844 });
   await capture(page, "uncertain-failure-mobile-light");
+  if (process.env.AAG_CAPTURE_EVIDENCE === "1") {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    page.on("dialog", (dialog) => dialog.accept());
+    await page.goto(provider.origin + "/jobs/rerun-origin?tab=meta");
+    await page
+      .getByRole("button", { name: "Account menu: alice", exact: true })
+      .click();
+    await page
+      .getByRole("menuitem", { name: "Display settings", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "한국어", exact: true }).click();
+    await expect(page.locator(".metadata")).toContainText("계보 루트");
+    await page.evaluate(
+      () => (document.documentElement.dataset.theme = "light"),
+    );
+    await capture(page, "metadata-desktop-ko-light");
+  }
 });
 test("ZIP rerun requires reselection and explicitly chooses original settings over draft", async ({
   page,
