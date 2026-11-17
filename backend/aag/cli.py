@@ -185,7 +185,7 @@ def remind_expirations(
         return
     db = None
     try:
-        db = Database(settings.database_url)
+        db = Database(settings.database_url, read_only=dry_run)
         result = emit_due_expirations(
             db, batch_size=batch_size, max_batches=max_batches, dry_run=dry_run
         )

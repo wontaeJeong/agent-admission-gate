@@ -124,6 +124,8 @@ uv run aag prune-notifications --batch-size 5000
 aag remind-expirations --batch-size 500 --max-batches 20 --dry-run
 ```
 
+SQLite 미리보기는 기존 DB를 mode=ro로 열며 디렉터리·DB 생성이나 영구 journal_mode 변경을 하지 않습니다. PostgreSQL은 읽기 전용 트랜잭션을 사용합니다. SQLite의 일반 잠금 처리는 기존 WAL DB에 -wal/-shm 보조 파일을 만들 수 있으나 DB 내용·스키마·행을 변경하지 않습니다. 살아 있는 WAL의 새 커밋도 읽으므로 immutable/nolock 모드는 사용하지 않습니다. DB 경로가 없으면 파일이나 부모 디렉터리를 만들지 않고 안전하게 실패합니다. [SQLite 읽기 전용 WAL 동작](https://www.sqlite.org/wal.html#read_only_databases)을 참고하세요.
+
 읽기 전용 실행은 후보 수를 계산하고 `emitted=0`을 출력합니다. 알림·수신자 순번·운영 이력·오래된 이력 정리를 포함해 DB에 쓰지 않습니다. 기본값과 최대값은 배치 500개, 20회이며 키·예외를 합쳐 최대 10,000개 후보를 처리합니다. 이미 발행됨·수신 거부·무효 대상은 제한 적용 전에 제외합니다. 한 실행은 DB 시각 하나를 기준으로 단계와 보존 경계를 고정합니다. 완료 시각은 이 기준과 실제 경과 시간으로 기록합니다.
 
 배포 예제는 `AAG_EXPIRY_REMINDERS_ENABLED=false`, CronJob `suspend: true`입니다. 실제 활성화는 검증 후 운영자가 다음 순서로 진행합니다.

@@ -510,3 +510,12 @@
 - 원인: 데이터베이스 생성/실행만 예외를 정제하고 그보다 앞선 설정 로딩은 보호하지 않았다.
 - 해결: 설정 로딩 실패도 원문 예외 대신 run_failed와 실패 종료 코드로 변환한다.
 - 예방: 운영 명령의 실패 테스트는 실제 처리뿐 아니라 설정 로딩·연결 생성 등 시작 전 단계도 포함하고, 예외 본문을 출력하지 않는지 검증한다.
+
+## 2026-11-17: D2 미리보기의 SQLite 연결 시작 경계
+
+- 현상: 리뷰의 실제 CLI probe에서 dry-run이 기존 DELETE journal을 WAL로 바꾸고, 없는 DB 경로에 파일/부모 디렉터리를 생성했다.
+- 원인: 감지 함수의 SELECT-only 분기만 검증했고, CLI가 먼저 만드는 일반 Database의 mkdir·journal_mode hook은 검증하지 않았다. 기존 CLI 테스트가 이미 초기화된 DB 객체를 반환하는 mock을 사용해 이 경계를 가렸다.
+- 해결: 미리보기만 실제 읽기 전용 연결을 사용한다. SQLite는 mode=ro/query_only와 일반 잠금을 사용하고 mkdir·journal_mode 변경을 생략한다. PostgreSQL은 read-only 트랜잭션을 사용한다. 새 CLI 테스트는 unopened DELETE DB의 SHA256/mode, 없는 파일/부모, 실제 WAL 커밋 가시성과 두 엔진의 쓰기 거부를 검증한다.
+- 제한 확인: SQLite의 mode=ro도 조용한 WAL DB에서 잠금용 -wal/-shm 파일을 만들 수 있다. controller는 이를 일반 조정 파일로 허용하되 DB 내용·스키마·행·영구 journal mode 변경과 새 DB/부모 생성은 금지하도록 범위를 명시했다. immutable/nolock/custom VFS를 추가하지 않았다. 읽기 전용 exclusive 잠금 probe는 I/O 오류가 나 사용하지 않았다.
+- 테스트 준비에서 파일명에 넣은 물음표가 SQLite URL의 query 구분자로 해석돼 WAL 파일 검증이 실패했다. 실제 대상 경로를 확인하고 URL 구분자를 제외한 공백/# 이름으로 고쳤다.
+- 예방: read-only 계약은 처리 함수뿐 아니라 새 연결의 시작/종료와 파일 상태까지 검증한다. 일반 엔진 객체로 대체하지 않고 실제 CLI 생성자를 통과시키며, DB 변경과 엔진의 조정 파일 동작을 구분해 문서화한다.

@@ -3,6 +3,7 @@
 import importlib
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Barrier
 
 import pytest
@@ -361,13 +362,11 @@ def test_shared_resource_cap_and_invalidated_candidate(workflow, monkeypatch):
 
 def test_global_failure_and_cli_safe_codes(workflow, monkeypatch):
     from aag import cli, config
-    from aag import db as db_module
     from typer.testing import CliRunner
 
     app, _, _ = workflow
     module = reminders()
     monkeypatch.setattr(config, "get_settings", lambda: app.state.settings)
-    monkeypatch.setattr(db_module, "Database", lambda url: app.state.db)
     runner = CliRunner()
     response = runner.invoke(cli.app, ["remind-expirations"])
     assert response.exit_code == 0
@@ -389,7 +388,6 @@ def test_global_failure_and_cli_safe_codes(workflow, monkeypatch):
 
 def test_cli_dryrun_disabled_flag_allows_readonly_preview(workflow, monkeypatch):
     from aag import cli, config
-    from aag import db as db_module
     from typer.testing import CliRunner
 
     app, _, _ = workflow
@@ -397,7 +395,6 @@ def test_cli_dryrun_disabled_flag_allows_readonly_preview(workflow, monkeypatch)
     with app.state.db.session.begin() as s:
         key(s, expiry=time.time() + DAY)
     monkeypatch.setattr(config, "get_settings", lambda: app.state.settings)
-    monkeypatch.setattr(db_module, "Database", lambda url: app.state.db)
     response = CliRunner().invoke(cli.app, ["remind-expirations", "--dry-run"])
     assert response.exit_code == 0
     assert '"scanned": 1' in response.stdout and '"emitted": 0' in response.stdout
@@ -592,3 +589,159 @@ def test_cli_configuration_failure_is_safe_aggregate(monkeypatch):
     assert response.exit_code == 1
     assert '"error_code": "run_failed"' in response.stdout
     assert "private" not in response.stdout
+
+
+def test_cli_preview_preserves_unopened_delete_database(tmp_path, monkeypatch):
+    import hashlib
+    import json
+    import sqlite3
+
+    from aag import cli, config
+    from aag.config import Settings
+    from sqlalchemy import create_engine
+    from typer.testing import CliRunner
+
+    path = tmp_path / "existing.sqlite"
+    url = "sqlite:///" + str(path)
+    engine = create_engine(url)
+    models.Base.metadata.create_all(engine)
+    engine.dispose()
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    files = set(tmp_path.iterdir())
+    monkeypatch.setattr(config, "get_settings", lambda: Settings(database_url=url))
+    result = CliRunner().invoke(cli.app, ["remind-expirations", "--dry-run"])
+    assert result.exit_code == 0, result.stdout
+    assert json.loads(result.stdout)["status"] == "success"
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+    assert set(tmp_path.iterdir()) == files
+
+
+@pytest.mark.parametrize("missing_parent", [False, True])
+def test_cli_preview_missing_database_creates_nothing(tmp_path, monkeypatch, missing_parent):
+    import json
+
+    from aag import cli, config
+    from aag.config import Settings
+    from typer.testing import CliRunner
+
+    parent = tmp_path / "absent" if missing_parent else tmp_path
+    path = parent / "missing.sqlite"
+    monkeypatch.setattr(
+        config, "get_settings", lambda: Settings(database_url="sqlite:///" + str(path))
+    )
+    before = set(tmp_path.rglob("*"))
+    result = CliRunner().invoke(cli.app, ["remind-expirations", "--dry-run"])
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["error_code"] == "database_failed"
+    assert set(tmp_path.rglob("*")) == before
+    assert not path.exists()
+
+
+def test_cli_preview_reads_committed_live_wal_changes(tmp_path, monkeypatch):
+    import hashlib
+    import json
+
+    from aag import cli, config
+    from aag.config import Settings
+    from aag.db import Database
+    from typer.testing import CliRunner
+
+    # Keep the writer open and disable autocheckpoint: new rows live in the WAL,
+    # so treating the main file as an immutable standalone DB would miss them.
+    path = tmp_path / "live # preview.sqlite"
+    url = "sqlite:///" + str(path)
+    writer = Database(url)
+    writer.create()
+    connection = writer.engine.connect()
+    connection.exec_driver_sql("PRAGMA wal_autocheckpoint=0")
+    connection.commit()
+    try:
+        monkeypatch.setattr(config, "get_settings", lambda: Settings(database_url=url))
+        runner = CliRunner()
+        first = runner.invoke(cli.app, ["remind-expirations", "--dry-run"])
+        assert first.exit_code == 0
+        assert json.loads(first.stdout)["scanned"] == 0
+        with writer.session.begin() as s:
+            s.add(User(id="live", subject="local:live", name="Synthetic"))
+            s.flush()
+            key(s, owner="live", expiry=time.time() + DAY)
+        wal = Path(str(path) + "-wal")
+        assert wal.stat().st_size > 0
+        durable_before = [hashlib.sha256(p.read_bytes()).hexdigest() for p in (path, wal)]
+        second = runner.invoke(cli.app, ["remind-expirations", "--dry-run"])
+        assert second.exit_code == 0
+        assert json.loads(second.stdout)["scanned"] == 1
+        assert [hashlib.sha256(p.read_bytes()).hexdigest() for p in (path, wal)] == durable_before
+        assert counts(writer) == (0, 0, 0)
+    finally:
+        connection.close()
+        writer.engine.dispose()
+
+
+def test_preview_connection_refuses_writes_on_both_engines(workflow):
+    from aag.db import Database
+    from sqlalchemy.exc import DBAPIError
+
+    app, _, _ = workflow
+    preview = Database(app.state.settings.database_url, read_only=True)
+    try:
+        with preview.session() as s:
+            assert s.get(User, "owner") is not None
+        with pytest.raises(DBAPIError), preview.session.begin() as s:
+            s.add(User(id="forbidden", subject="local:forbidden", name="Synthetic"))
+            s.flush()
+        with app.state.db.session() as s:
+            assert s.get(User, "forbidden") is None
+    finally:
+        preview.engine.dispose()
+
+
+def test_normal_database_still_creates_parent_and_uses_wal(tmp_path):
+    from aag.db import Database
+
+    path = tmp_path / "normal" / "new.sqlite"
+    db = Database("sqlite:///" + str(path))
+    try:
+        db.create()
+        with db.engine.connect() as c:
+            assert c.exec_driver_sql("PRAGMA journal_mode").scalar_one() == "wal"
+        assert path.exists()
+    finally:
+        db.engine.dispose()
+
+
+def test_cli_preview_quiescent_wal_allows_only_coordination_sidecars(tmp_path, monkeypatch):
+    import hashlib
+    import json
+
+    from aag import cli, config
+    from aag.config import Settings
+    from aag.db import Database
+    from typer.testing import CliRunner
+
+    path = tmp_path / "quiescent.sqlite"
+    url = "sqlite:///" + str(path)
+    writer = Database(url)
+    writer.create()
+    writer.engine.dispose()
+    assert set(tmp_path.iterdir()) == {path}
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+    monkeypatch.setattr(config, "get_settings", lambda: Settings(database_url=url))
+    result = CliRunner().invoke(cli.app, ["remind-expirations", "--dry-run"])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["scanned"] == 0
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+    # SQLite may create normal WAL coordination files even in mode=ro.
+    # This permission never extends to a new DB, parent, schema, or row write.
+    assert set(tmp_path.iterdir()) <= {path, Path(str(path) + "-wal"), Path(str(path) + "-shm")}
+    preview = Database(url, read_only=True)
+    try:
+        with preview.engine.connect() as c:
+            assert c.exec_driver_sql("PRAGMA journal_mode").scalar_one() == "wal"
+    finally:
+        preview.engine.dispose()
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
