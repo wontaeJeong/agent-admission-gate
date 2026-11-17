@@ -140,6 +140,7 @@ class Review(Base):
     workflow_state: Mapped[str] = mapped_column(
         String(24), default="waiting", server_default="waiting"
     )
+    previous_review_id: Mapped[str | None] = mapped_column(ForeignKey("reviews.id"), unique=True)
     closed_reason: Mapped[str | None] = mapped_column(Text)
     decision_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[float] = mapped_column(Float, default=time.time)

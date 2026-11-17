@@ -7,6 +7,7 @@ first write serializes before the initial read, avoiding snapshot upgrades.
 """
 
 import time
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException
 from sqlalchemy import and_, case, or_, select, update
@@ -14,6 +15,7 @@ from sqlalchemy import and_, case, or_, select, update
 from .db import audit, record
 from .models import Job, Review, ReviewEvent, User
 from .notifications import emit_notification
+from .sources import validate_git_url
 
 
 def current_actor(s, actor, *, reviewer=False):
@@ -37,10 +39,23 @@ def visible_review(s, actor, review_id):
     return r
 
 
-def review_dto(s, review):
+def review_dto(s, review, actor):
     user = s.get(User, review.assignee_id) if review.assignee_id else None
+    links = {}
+    for direction, linked in (
+        (
+            "previous",
+            s.get(Review, review.previous_review_id) if review.previous_review_id else None,
+        ),
+        ("next", s.scalar(select(Review).where(Review.previous_review_id == review.id))),
+    ):
+        authorized = linked and (linked.requester_id == actor.id or actor.staff)
+        job = s.get(Job, linked.job_id) if authorized else None
+        links[direction + "_review_id"] = linked.id if authorized else None
+        links[direction + "_content_hash"] = job.content_hash if job else None
     return {
         **record(review),
+        **links,
         "assignee": {
             "id": user.id,
             "name": user.name,
@@ -67,9 +82,13 @@ def event(s, actor, r, kind, before, after, reason=None):
     audit(s, actor.id, "review." + kind, r.id, from_state=before, to_state=after)
 
 
-def transition_review(s, actor, review_id, expected_revision, action, reason=None):
+def transition_review(
+    s, actor, review_id, expected_revision, action, reason=None, *, new_job_id=None
+):
     user = current_actor(s, actor, reviewer=action in {"claim", "request_changes"})
     r = visible_review(s, actor, review_id)
+    if action == "follow-up":
+        return follow_up(s, actor, r, expected_revision, new_job_id, reason)
     before = r.workflow_state
     previous_assignee = r.assignee_id
     if action in {"withdraw", "request_changes", "respond"} and (
@@ -179,7 +198,113 @@ def transition_review(s, actor, review_id, expected_revision, action, reason=Non
         actor_id=actor.id,
     )
     s.flush()
-    return review_dto(s, r)
+    return review_dto(s, r, actor)
+
+
+def followup_conflict(s, actor, review_id):
+    linked = s.scalar(select(Review).where(Review.previous_review_id == review_id))
+    return HTTPException(
+        409,
+        {
+            "message": "Review changed or already has a follow-up; reload before retrying",
+            "next_review_id": linked.id
+            if linked and (linked.requester_id == actor.id or actor.staff)
+            else None,
+        },
+    )
+
+
+def follow_up(s, actor, r, expected_revision, new_job_id, reason):
+    """Actor is already locked; source CAS precedes all domain and inbox writes."""
+    if r.requester_id != actor.id:
+        raise HTTPException(403, "Only the requester can create a follow-up")
+    old, new = s.get(Job, r.job_id), s.get(Job, new_job_id)
+    if not old or old.owner_id != actor.id or not new or new.owner_id != actor.id:
+        raise HTTPException(404, "Scan not found")
+    if s.scalar(select(Review.id).where(Review.previous_review_id == r.id)):
+        raise followup_conflict(s, actor, r.id)
+    eligible = r.status == "rejected" or (
+        r.status == "pending" and r.workflow_state == "changes_requested"
+    )
+    if not eligible or r.revision != expected_revision:
+        raise followup_conflict(s, actor, r.id)
+    if new.id == old.id or new.status != "COMPLETED" or new.created_at < old.created_at:
+        raise HTTPException(409, "A new completed scan at or after the original is required")
+    if old.source_type != new.source_type:
+        raise HTTPException(422, "Scan source type differs")
+    if old.source_type == "git":
+        try:
+            urls = [
+                validate_git_url(j.source, [urlsplit(j.source).hostname], resolve=False)
+                for j in (old, new)
+            ]
+        except ValueError:
+            raise HTTPException(422, "Repository identity is unavailable") from None
+        if urls[0] != urls[1]:
+            raise HTTPException(422, "Scan repository differs")
+    elif old.source_type != "upload" or new.lineage_root_id != (old.lineage_root_id or old.id):
+        raise HTTPException(422, "Scan ZIP lineage differs")
+    if s.scalar(select(Review.id).where(Review.job_id == new.id)):
+        raise HTTPException(409, "Review request already exists for this scan")
+    superseded = r.status == "pending"
+    before = r.workflow_state
+    values = (
+        {
+            "status": "withdrawn",
+            "workflow_state": "closed",
+            "closed_reason": "superseded",
+            "revision": Review.revision + 1,
+        }
+        if superseded
+        else {"revision": Review.revision}
+    )
+    changed = s.execute(
+        update(Review)
+        .where(
+            Review.id == r.id,
+            Review.revision == expected_revision,
+            or_(
+                Review.status == "rejected",
+                and_(Review.status == "pending", Review.workflow_state == "changes_requested"),
+            ),
+        )
+        .values(**values)
+    ).rowcount
+    if changed != 1:
+        raise followup_conflict(s, actor, r.id)
+    follow = Review(job_id=new.id, requester_id=actor.id, reason=reason, previous_review_id=r.id)
+    s.add(follow)
+    s.flush()
+    if superseded:
+        event(s, actor, r, "superseded", before, "closed", reason)
+    event(s, actor, follow, "follow_up", "closed" if not superseded else before, "waiting", reason)
+    # Two legitimate events can share a recipient. Sort the union once to
+    # prevent inversions between the old assignment and the new reviewer set.
+    reviewers = set(s.scalars(select(User.id).where(User.reviewer.is_(True))))
+    old_recipients = {r.assignee_id} - {None} if superseded else set()
+    for recipient in sorted(reviewers | old_recipients):
+        if recipient in old_recipients:
+            emit_notification(
+                s,
+                "review.withdrawn",
+                old,
+                [recipient],
+                f"review.update:{r.id}:{r.revision}",
+                r.id,
+                actor_id=actor.id,
+            )
+        if recipient in reviewers:
+            emit_notification(
+                s,
+                "review.requested",
+                new,
+                [recipient],
+                "review.requested:" + follow.id,
+                follow.id,
+                actor_id=actor.id,
+            )
+    s.flush()
+    return review_dto(s, follow, actor)
 
 
 def decide_review(s, actor, review_id, data):

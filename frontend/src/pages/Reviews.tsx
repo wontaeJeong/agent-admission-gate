@@ -26,6 +26,7 @@ import { Admission, Comments, Findings } from "./Scans";
 import {
   ReviewActivity,
   ReviewAssignment,
+  ReviewLineage,
   workflowLabel,
 } from "./ReviewActivity";
 export function Reviews() {
@@ -373,7 +374,14 @@ export function ReviewDetail() {
               {r.closed_reason && (
                 <>
                   <h3>{t("종료 사유", "Closure reason")}</h3>
-                  <p>{r.closed_reason}</p>
+                  <p>
+                    {r.closed_reason === "superseded"
+                      ? t(
+                          "수정 후 요청으로 대체됨",
+                          "Superseded by a follow-up request",
+                        )
+                      : r.closed_reason}
+                  </p>
                 </>
               )}
               <h2>{t("요청 사유", "Request reason")}</h2>
@@ -386,6 +394,7 @@ export function ReviewDetail() {
                 </>
               )}
             </section>
+            <ReviewLineage review={r} />
             <ReviewAssignment
               review={r}
               onChanged={() => setRefresh((x) => x + 1)}

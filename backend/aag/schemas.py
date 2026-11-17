@@ -115,3 +115,7 @@ class ReviewChange(ReviewClaim):
         if len(self.reason.strip()) < 5:
             raise ValueError("A reason of 5–4000 characters is required")
         return self
+
+
+class ReviewFollowUp(ReviewChange):
+    new_job_id: str = Field(min_length=1, max_length=64)

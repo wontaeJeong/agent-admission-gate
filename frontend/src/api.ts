@@ -52,9 +52,11 @@ export async function api<T = any>(
       response.status,
       typeof data.detail === "string"
         ? data.detail
-        : data.detail
+        : Array.isArray(data.detail)
           ? data.detail.map((d: any) => d.msg).join("; ")
-          : `HTTP ${response.status}`,
+          : typeof data.detail?.message === "string"
+            ? data.detail.message
+            : `HTTP ${response.status}`,
     );
   return data;
 }

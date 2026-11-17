@@ -5,6 +5,7 @@ import {
   selectFinding,
   findingHref,
 } from "../findingSelection";
+import { ScanFollowUp } from "./ReviewActivity";
 import { SummaryTools } from "./ScanSummary";
 import { rerunFields, snapshotCommit, type RerunMode } from "./scanRerun";
 import { useDraft } from "../useDraft";
@@ -912,6 +913,9 @@ export function JobDetail() {
               <>
                 <DraftRecovery draft={draft} />
                 <Admission job={job} />
+                {job.origin_job_id && job.owner_id === user.id && (
+                  <ScanFollowUp job={job} />
+                )}
                 {job.review && (
                   <section
                     className="panel form-panel"

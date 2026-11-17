@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ListLink } from "../SavedViews";
+import type { Job } from "../api";
 import { api, APIError, timestamp } from "../api";
 import { useAccountMutation } from "../accountMutations";
 import { useApp, useText } from "../context";
@@ -40,6 +43,8 @@ export function ReviewActivity({
     request_changes: t("보완 요청", "Changes requested"),
     respond: t("설명 보충", "Explanation added"),
     withdraw: t("철회", "Withdrawn"),
+    superseded: t("수정 후 요청으로 대체", "Superseded by follow-up"),
+    follow_up: t("후속 검토 요청", "Follow-up requested"),
     approved: t("승인", "Approved"),
     rejected: t("반려", "Rejected"),
   };
@@ -171,7 +176,12 @@ export function ReviewAssignment({
   );
 }
 
-type Action = "release" | "request-changes" | "respond" | "withdraw";
+type Action =
+  | "release"
+  | "request-changes"
+  | "respond"
+  | "withdraw"
+  | "follow-ups";
 function ReviewAction({
   review: r,
   onChanged,
@@ -179,6 +189,7 @@ function ReviewAction({
   action,
   eligible,
   canClaim = false,
+  newJobId,
 }: {
   review: any;
   onChanged: () => void;
@@ -186,11 +197,18 @@ function ReviewAction({
   action: Action;
   eligible: boolean;
   canClaim?: boolean;
+  newJobId?: string;
 }) {
   const { user, reviewWorkflow, reconcileSession } = useApp(),
     t = useText(),
-    send = useAccountMutation();
+    send = useAccountMutation(),
+    navigate = useNavigate();
   const labels = {
+    "follow-ups": [
+      t("후속 검토 요청", "Request follow-up review"),
+      t("후속 요청 사유", "Follow-up reason"),
+      t("후속 요청 제출", "Submit follow-up request"),
+    ],
     release: [
       t("담당 해제", "Release assignment"),
       t("해제 사유", "Release reason"),
@@ -217,6 +235,7 @@ function ReviewAction({
     "request-changes": "review_changes",
     respond: "review_respond",
     withdraw: "review_withdraw",
+    "follow-ups": "review_followup",
   };
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
@@ -232,7 +251,7 @@ function ReviewAction({
     !uncertain;
   const draft = useDraft({
     kind: kinds[action],
-    targetId: r.id,
+    targetId: newJobId ? r.id + ":" + newJobId : r.id,
     enabled: true,
     writable: !!reviewWorkflow && current && (eligible || canClaim),
     initialFields: { reason: "" },
@@ -244,15 +263,17 @@ function ReviewAction({
     setBusy(true);
     setError("");
     try {
-      await send("/reviews/" + r.id + "/" + target, {
+      const result = await send("/reviews/" + r.id + "/" + target, {
         expected_revision: submission.baseRevision,
+        ...(target === "follow-ups" ? { new_job_id: newJobId } : {}),
         ...(target !== "claim" && submission.fields.reason
           ? { reason: submission.fields.reason }
           : {}),
       });
       if (!draft.markSubmitted(submission)) return;
       setOpen(false);
-      onChanged();
+      if (target === "follow-ups") navigate("/reviews/" + result.id);
+      else onChanged();
     } catch (e) {
       if (!draft.isCurrentSubmission(submission)) return;
       setError((e as Error).message);
@@ -383,5 +404,152 @@ function ReviewAction({
         </>
       )}
     </div>
+  );
+}
+
+export function ReviewLineage({ review: r }: { review: any }) {
+  const t = useText(),
+    { user, reviewWorkflow } = useApp();
+  const eligible =
+    r.status === "rejected" ||
+    (r.status === "pending" && r.workflow_state === "changes_requested");
+  return (
+    <section className="panel form-panel">
+      <h2>{t("검토 연결 · 검사 내용", "Review links · scanned content")}</h2>
+      <p style={{ overflowWrap: "anywhere" }}>
+        {t("현재 내용 해시: ", "Current content hash: ")}
+        <code>{r.job.content_hash || t("기록 없음", "Not recorded")}</code>
+      </p>
+      {(["previous", "next"] as const).map(
+        (direction) =>
+          r[direction + "_review_id"] && (
+            <p key={direction} style={{ overflowWrap: "anywhere" }}>
+              <ListLink
+                resource="reviews"
+                to={"/reviews/" + r[direction + "_review_id"]}
+              >
+                {direction === "previous"
+                  ? t("이전 요청", "Previous request")
+                  : t("수정 후 요청", "Follow-up request")}
+              </ListLink>
+              <br />
+              {t("내용 해시: ", "Content hash: ")}
+              <code>
+                {r[direction + "_content_hash"] ||
+                  t("기록 없음", "Not recorded")}
+              </code>
+            </p>
+          ),
+      )}
+      {reviewWorkflow &&
+        r.requester_id === user.id &&
+        r.job.owner_id === user.id &&
+        eligible &&
+        !r.next_review_id && (
+          <>
+            <p>
+              {t(
+                "수정한 내용을 새로 검사한 뒤 별도의 검토를 요청합니다.",
+                "Scan corrected content, then request a separate review.",
+              )}
+            </p>
+            <ListLink
+              resource="reviews"
+              to={"/new?from=" + encodeURIComponent(r.job_id) + "&mode=latest"}
+            >
+              {t("수정본 검사", "Scan corrected content")}
+            </ListLink>
+          </>
+        )}
+    </section>
+  );
+}
+
+export function ScanFollowUp({ job }: { job: Job }) {
+  const origin = useLoad("/scans/" + encodeURIComponent(job.origin_job_id!));
+  return (
+    <State
+      {...origin}
+      preserveContent={!!origin.data && (!origin.error || origin.retryable)}
+    >
+      {origin.data?.review?.id && (
+        <FollowUpSource
+          key={origin.data.review.id + ":" + job.id}
+          reviewId={origin.data.review.id}
+          job={job}
+        />
+      )}
+    </State>
+  );
+}
+function FollowUpSource({ reviewId, job }: { reviewId: string; job: Job }) {
+  const [refresh, setRefresh] = useState(0);
+  const load = useLoad(
+    "/reviews/" + encodeURIComponent(reviewId),
+    refresh,
+    4000,
+  );
+  const t = useText(),
+    { user } = useApp(),
+    r = load.data;
+  const eligible =
+    r &&
+    r.requester_id === user.id &&
+    job.owner_id === user.id &&
+    job.status === "COMPLETED" &&
+    job.review === null &&
+    !r.next_review_id &&
+    (r.status === "rejected" ||
+      (r.status === "pending" && r.workflow_state === "changes_requested"));
+  return (
+    <State {...load} preserveContent={!!r && (!load.error || load.retryable)}>
+      {r && (
+        <section
+          className="panel form-panel"
+          aria-label={t("후속 검토", "Follow-up review")}
+        >
+          <h2>{t("후속 검토", "Follow-up review")}</h2>
+          <p>
+            <Link to={"/reviews/" + r.id}>
+              {t("이전 요청", "Previous request")}
+            </Link>
+          </p>
+          <p style={{ overflowWrap: "anywhere" }}>
+            {t("이전 내용 해시: ", "Previous content hash: ")}
+            <code>{r.job.content_hash || t("기록 없음", "Not recorded")}</code>
+          </p>
+          <p style={{ overflowWrap: "anywhere" }}>
+            {t("새 내용 해시: ", "New content hash: ")}
+            <code>{job.content_hash || t("기록 없음", "Not recorded")}</code>
+          </p>
+          {r.next_review_id && (
+            <p>
+              <Link to={"/reviews/" + r.next_review_id}>
+                {t(
+                  "이미 생성된 후속 요청 보기",
+                  "View existing follow-up request",
+                )}
+              </Link>
+            </p>
+          )}
+          {job.status !== "COMPLETED" && (
+            <p>
+              {t(
+                "새 검사가 완료되면 후속 검토를 요청할 수 있습니다.",
+                "A follow-up can be requested after this scan completes.",
+              )}
+            </p>
+          )}
+          <ReviewAction
+            review={r}
+            action="follow-ups"
+            newJobId={job.id}
+            eligible={!!eligible}
+            readVerified={!load.error || load.retryable}
+            onChanged={() => setRefresh((x) => x + 1)}
+          />
+        </section>
+      )}
+    </State>
   );
 }
