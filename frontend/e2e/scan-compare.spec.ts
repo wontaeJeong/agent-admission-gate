@@ -122,10 +122,12 @@ async function open(page: Page) {
 }
 async function capture(page: Page, name: string) {
   if (process.env.AAG_CAPTURE_EVIDENCE !== "1") return;
-  const dir = resolve(
-    import.meta.dirname,
-    "../../docs/engineering/screenshots/convenience-b3",
-  );
+  const dir =
+    process.env.AAG_CAPTURE_DIR ||
+    resolve(
+      import.meta.dirname,
+      "../../docs/engineering/screenshots/convenience-b3",
+    );
   mkdirSync(dir, { recursive: true });
   await page.locator("main").focus();
   await page.evaluate(async () => {
@@ -161,6 +163,8 @@ test("stored comparison distinguishes candidates, suppression and incomplete evi
   await expect(
     page.getByRole("table", { name: "Finding comparison" }),
   ).toContainText("Suppression changed");
+  await expect(page.getByText(/An exact fingerprint means/)).toBeVisible();
+  await expect(page.getByText(/Unmatched means a unique match/)).toBeVisible();
   await expect(
     page.getByRole("table", { name: "Finding comparison" }),
   ).toContainText("Not observed · remediation requires confirmation");
@@ -191,6 +195,10 @@ test("stored comparison distinguishes candidates, suppression and incomplete evi
   await expect(
     page.getByRole("table", { name: "발견 사항 비교" }),
   ).toContainText("예외 적용 변경");
+  await expect(
+    page.getByText(/동일 fingerprint는 저장된 식별자가/),
+  ).toBeVisible();
+  await expect(page.getByText(/일치 여부 불명은 유일한 대응을/)).toBeVisible();
   await capture(page, "comparison-desktop-ko-dark");
 });
 test("unlinked ZIP confirmation is explicit and warning persists", async ({
@@ -430,4 +438,103 @@ test("real stored ZIP results require explicit unlinked confirmation without mut
     await page.request.get(provider.origin + "/api/scans/" + current.id)
   ).json();
   expect(after).toEqual(current);
+});
+
+test("comparison categories filter all results before pagination and reset the page", async ({
+  page,
+}) => {
+  await login(page);
+  const result = evidence();
+  result.items = [
+    ...Array.from({ length: 60 }, (_, i) => ({
+      ...result.items[1],
+      baseline_finding: finding(i),
+      current_finding: finding(i),
+    })),
+    ...Array.from({ length: 60 }, (_, i) => ({
+      ...result.items[2],
+      current_finding: finding(1000 + i),
+    })),
+  ];
+  result.summary = {
+    persisting: 60,
+    moved_candidate: 0,
+    new: 60,
+    not_observed: 0,
+    unmatched: 0,
+  };
+  await page.route("**/api/scans/current/compare?*", (route) =>
+    route.fulfill({ json: result }),
+  );
+  await open(page);
+  const limitations = page.getByRole("heading", {
+    name: "Comparison limitations",
+  });
+  const summary = page.getByRole("heading", { name: "Observed changes" });
+  const metadataHeading = page.getByRole("heading", {
+    name: "Stored scan metadata",
+  });
+  await expect(limitations).toBeVisible();
+  await expect(summary).toBeVisible();
+  const order = await page.locator("main h2").allTextContents();
+  expect(order.indexOf("Comparison limitations")).toBeLessThan(
+    order.indexOf("Observed changes"),
+  );
+  expect(order.indexOf("Observed changes")).toBeLessThan(
+    order.indexOf("Stored scan metadata"),
+  );
+  await expect(metadataHeading).toBeVisible();
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await page.getByRole("button", { name: /Newly observed.*60/ }).click();
+  const table = page.getByRole("table", { name: "Finding comparison" });
+  await expect(table).toContainText("src/example.py:1000");
+  await expect(table).not.toContainText("src/example.py:0");
+  await expect(
+    page.getByRole("button", { name: /Newly observed.*60/ }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("60 results", { exact: true })).toBeVisible();
+  if (process.env.AAG_COMPARE_CAPTURE === "1") {
+    await page.screenshot({
+      path: "/private/tmp/aag-compare-review-dark.png",
+      fullPage: false,
+      animations: "disabled",
+    });
+    await page.evaluate(
+      () => (document.documentElement.dataset.theme = "light"),
+    );
+    await page.screenshot({
+      path: "/private/tmp/aag-compare-review-light.png",
+      fullPage: false,
+      animations: "disabled",
+    });
+  }
+  await expect(page.getByText("1 / 2", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /Unmatched.*0/ }).click();
+  await expect(
+    page.getByText("No findings in this category", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /All findings.*120/ }).click();
+  await expect(table).toContainText("src/example.py:0");
+  await expect(page.getByText("120 results", { exact: true })).toBeVisible();
+});
+
+test("focused comparison category survives a desktop and mobile resize", async ({
+  page,
+}) => {
+  await login(page);
+  await page.route("**/api/scans/current/compare?*", (route) =>
+    route.fulfill({ json: evidence() }),
+  );
+  await open(page);
+  const category = page.getByRole("button", { name: /Newly observed.*1/ });
+  await category.click();
+  await expect(category).toBeFocused();
+  await page.setViewportSize({ width: 790, height: 844 });
+  await expect(category).toBeFocused();
+  await expect(category).toHaveAttribute("aria-pressed", "true");
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await expect(category).toBeFocused();
+  await expect(
+    page.getByRole("table", { name: "Finding comparison" }),
+  ).toContainText("src/example.py:9");
 });

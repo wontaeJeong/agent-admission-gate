@@ -2177,3 +2177,40 @@ tbody tr:hover {
 .search-results p {
   white-space: pre-wrap;
 }
+
+/* Comparison categories use the existing surface and selection tokens. */
+.comparison-summary-mobile {
+  display: none;
+}
+.comparison-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.comparison-categories button {
+  white-space: normal;
+  text-align: left;
+}
+.comparison-categories button[aria-pressed="true"] {
+  color: var(--color-accent);
+  background: var(--color-accent-subtle);
+  border-color: var(--color-accent);
+}
+.comparison-categories strong {
+  font-variant-numeric: tabular-nums;
+}
+.comparison-change {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.comparison-explanations p + p {
+  margin-top: 8px;
+}
+@media (max-width: 800px) {
+  .comparison-summary-desktop {
+    display: none;
+  }
+  .comparison-summary-mobile {
+    display: block;
+  }
+}
